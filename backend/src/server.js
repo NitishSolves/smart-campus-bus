@@ -11,17 +11,49 @@ const { pool } = require('./db');
 const tracking = require('./services/tracking');
 
 const app = express();
+app.set('trust proxy', 1);
+
+const allowedOrigins = new Set([
+  'https://smart-campus-bus-one.vercel.app',
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+]);
+
+(process.env.CORS_ORIGINS || '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean)
+  .forEach((origin) => allowedOrigins.add(origin));
+
+function isAllowedOrigin(origin) {
+  if (!origin) return true;
+  if (allowedOrigins.has(origin)) return true;
+  return /^https:\/\/smart-campus-bus[a-z0-9-]*\.vercel\.app$/.test(origin);
+}
+
+const corsOptions = {
+  origin(origin, callback) {
+    if (isAllowedOrigin(origin)) {
+      callback(null, true);
+      return;
+    }
+    callback(new Error('Not allowed by CORS'));
+  },
+  credentials: true,
+};
+
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: true,
+    origin: corsOptions.origin,
     methods: ['GET', 'POST'],
+    credentials: true,
   },
 });
 tracking.setIo(io);
 
 app.use(helmet({ contentSecurityPolicy: false, crossOriginResourcePolicy: { policy: 'cross-origin' } }));
-app.use(cors({ origin: true, credentials: true }));
+app.use(cors(corsOptions));
 app.use(express.json({ limit: '1mb' }));
 app.use(
   rateLimit({

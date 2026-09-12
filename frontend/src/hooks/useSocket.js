@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
+import { getBackendOrigin } from '../api';
 
 export function useSocket(onTracking) {
   const [connected, setConnected] = useState(false);
@@ -11,7 +12,7 @@ export function useSocket(onTracking) {
   useEffect(() => {
     if (socketRef.current) return; // Prevent duplicate connections
 
-    const socket = io('/', { 
+    const socket = io(getBackendOrigin() || '/', {
       transports: ['websocket', 'polling'],
       reconnection: true,
       reconnectionDelay: 1000,
