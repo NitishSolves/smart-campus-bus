@@ -78,6 +78,7 @@ router.post('/trip/start', authenticate, requireRole('driver', 'admin'), async (
 
 router.post('/trip/location', authenticate, requireRole('driver', 'admin'), async (req, res) => {
   try {
+    const { lat, lng, speedKmh, useSimulation = true } = req.body || {};
     const driver = await getDriverRecord(req.user.id);
     const tripRes = await query(
       `SELECT * FROM trips WHERE driver_id = $1 AND status IN ('active', 'delayed') ORDER BY started_at DESC LIMIT 1`,
@@ -85,22 +86,80 @@ router.post('/trip/location', authenticate, requireRole('driver', 'admin'), asyn
     );
     const trip = tripRes.rows[0];
     if (!trip) return res.status(400).json({ error: 'No active trip' });
-    const path = Array.isArray(driver.path) ? driver.path : [];
-    const nextProgress = Math.min(0.99, Number(trip.progress || 0) + 0.04);
-    const point = interpolatePath(path, nextProgress);
+
+    let finalLat = lat;
+    let finalLng = lng;
+    let finalSpeed = speedKmh || 18;
+    let nextProgress = trip.progress || 0;
+
+    // If real GPS provided, use it; otherwise simulate
+    if (lat !== undefined && lng !== undefined && lat !== null && lng !== null) {
+      // Validate coordinates
+      if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+        return res.status(400).json({ error: 'Invalid coordinates' });
+      }
+      finalLat = lat;
+      finalLng = lng;
+    } else if (useSimulation) {
+      const path = Array.isArray(driver.path) ? driver.path : [];
+      nextProgress = Math.min(0.99, Number(trip.progress || 0) + 0.04);
+      const point = interpolatePath(path, nextProgress);
+      finalLat = point.lat;
+      finalLng = point.lng;
+    } else {
+      return res.status(400).json({ error: 'Either provide real coordinates or enable simulation' });
+    }
+
     const record = await tracking.recordLocation({
       tripId: trip.id,
-      lat: point.lat,
-      lng: point.lng,
-      speedKmh: 18,
-      heading: point.heading,
+      lat: finalLat,
+      lng: finalLng,
+      speedKmh: finalSpeed,
+      heading: undefined,
       progress: nextProgress,
       occupancy: trip.occupancy,
     });
-    return res.json({ location: record, progress: nextProgress });
+    return res.json({ location: record, progress: nextProgress, mode: lat ? 'LIVE' : 'SIMULATED' });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Failed to update location' });
+  }
+});
+
+router.post('/trip/occupancy', authenticate, requireRole('driver', 'admin'), async (req, res) => {
+  try {
+    const { passengerCount } = req.body || {};
+    if (passengerCount === undefined || passengerCount === null) {
+      return res.status(400).json({ error: 'passengerCount is required' });
+    }
+    const driver = await getDriverRecord(req.user.id);
+    if (!driver) return res.status(404).json({ error: 'Driver profile not found' });
+    
+    // Validate occupancy doesn't exceed capacity
+    if (passengerCount < 0) {
+      return res.status(400).json({ error: 'Passenger count cannot be negative' });
+    }
+    if (passengerCount > driver.capacity) {
+      return res.status(400).json({ error: `Passenger count exceeds bus capacity (${driver.capacity})` });
+    }
+
+    const tripRes = await query(
+      `SELECT * FROM trips WHERE driver_id = $1 AND status IN ('active', 'delayed') ORDER BY started_at DESC LIMIT 1`,
+      [driver.id]
+    );
+    const trip = tripRes.rows[0];
+    if (!trip) return res.status(400).json({ error: 'No active trip' });
+
+    const { rows } = await query(
+      `UPDATE trips SET occupancy = $1, updated_at = NOW() WHERE id = $2 RETURNING *`,
+      [passengerCount, trip.id]
+    );
+    
+    tracking.emitTrip(rows[0]);
+    return res.json({ trip: rows[0], message: `Occupancy updated to ${passengerCount}/${driver.capacity}` });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Failed to update occupancy' });
   }
 });
 
@@ -142,6 +201,43 @@ router.post('/trip/end', authenticate, requireRole('driver', 'admin'), async (re
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Failed to end trip' });
+  }
+});
+
+router.post('/emergency', authenticate, requireRole('driver', 'admin'), async (req, res) => {
+  try {
+    const { message, lat, lng } = req.body || {};
+    const driver = await getDriverRecord(req.user.id);
+    if (!driver) return res.status(404).json({ error: 'Driver profile not found' });
+    
+    const tripRes = await query(
+      `SELECT * FROM trips WHERE driver_id = $1 AND status IN ('active', 'delayed') ORDER BY started_at DESC LIMIT 1`,
+      [driver.id]
+    );
+    const trip = tripRes.rows[0];
+    if (!trip) return res.status(400).json({ error: 'No active trip' });
+
+    const { rows } = await query(
+      `INSERT INTO emergency_alerts (trip_id, bus_id, driver_id, lat, lng, message, status)
+       VALUES ($1, $2, $3, $4, $5, $6, 'active')
+       RETURNING *`,
+      [trip.id, driver.assigned_bus_id, driver.id, lat || null, lng || null, message || 'Emergency alert from driver']
+    );
+
+    const alert = rows[0];
+    tracking.emitEmergency(alert);
+    
+    // Notify admin
+    await query(
+      `INSERT INTO notifications (user_id, type, title, body, related_bus_id)
+       SELECT id, 'emergency', $1, $2, $3 FROM users WHERE role = 'admin'`,
+      [`🚨 Emergency: ${driver.bus_number}`, `Driver ${driver.full_name} triggered emergency on ${driver.route_name}`, driver.assigned_bus_id]
+    );
+
+    return res.status(201).json({ alert });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Failed to create emergency alert' });
   }
 });
 

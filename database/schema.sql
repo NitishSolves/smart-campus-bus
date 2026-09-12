@@ -170,13 +170,35 @@ CREATE TABLE announcements (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE emergency_alerts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  trip_id UUID NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+  bus_id UUID NOT NULL REFERENCES buses(id) ON DELETE CASCADE,
+  driver_id UUID NOT NULL REFERENCES drivers(id) ON DELETE CASCADE,
+  lat DOUBLE PRECISION,
+  lng DOUBLE PRECISION,
+  message TEXT,
+  status VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'acknowledged', 'resolved')),
+  acknowledged_at TIMESTAMPTZ,
+  acknowledged_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE INDEX idx_users_email ON users(email);
 CREATE INDEX idx_users_role ON users(role);
 CREATE INDEX idx_trips_status ON trips(status);
 CREATE INDEX idx_trips_route ON trips(route_id);
+CREATE INDEX idx_trips_bus ON trips(bus_id);
+CREATE INDEX idx_trips_driver ON trips(driver_id);
 CREATE INDEX idx_bus_locations_trip_time ON bus_locations(trip_id, recorded_at DESC);
 CREATE INDEX idx_notifications_user ON notifications(user_id, created_at DESC);
 CREATE INDEX idx_favorites_user ON favorites(user_id);
 CREATE INDEX idx_eta_trip ON eta_predictions(trip_id, created_at DESC);
 CREATE INDEX idx_demand_route ON demand_predictions(route_id, day_of_week, hour_of_day);
 CREATE INDEX idx_route_stops_route ON route_stops(route_id, stop_order);
+CREATE INDEX idx_emergency_alerts_status ON emergency_alerts(status);
+CREATE INDEX idx_emergency_alerts_trip ON emergency_alerts(trip_id);
+CREATE INDEX idx_emergency_alerts_created ON emergency_alerts(created_at DESC);
+CREATE INDEX idx_bus_locations_bus ON bus_locations(bus_id);
+CREATE INDEX idx_announcements_active ON announcements(is_active, created_at DESC);

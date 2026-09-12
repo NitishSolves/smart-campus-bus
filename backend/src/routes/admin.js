@@ -15,6 +15,30 @@ router.get('/overview', async (_req, res) => {
     const todayTrips = await query(`SELECT COUNT(*)::int AS n FROM trips WHERE created_at::date = CURRENT_DATE`);
     const delayed = await query(`SELECT COUNT(*)::int AS n FROM trips WHERE status = 'delayed'`);
     const drivers = await query('SELECT COUNT(*)::int AS n FROM drivers');
+    
+    // Count active emergencies
+    const emergencies = await query(`SELECT COUNT(*)::int AS n FROM emergency_alerts WHERE status IN ('active', 'acknowledged')`);
+    
+    // Find capacity risks
+    const capacityRisks = await query(
+      `SELECT COUNT(*)::int AS n FROM trips t
+       JOIN buses b ON b.id = t.bus_id
+       WHERE t.status IN ('active', 'delayed')
+       AND t.occupancy > (b.capacity * 0.85)`
+    );
+    
+    // Get stale location count (no update in 5 minutes)
+    const staleGPS = await query(
+      `SELECT COUNT(DISTINCT t.id)::int AS n FROM trips t
+       JOIN buses b ON b.id = t.bus_id
+       LEFT JOIN LATERAL (
+         SELECT recorded_at FROM bus_locations WHERE trip_id = t.id
+         ORDER BY recorded_at DESC LIMIT 1
+       ) loc ON TRUE
+       WHERE t.status IN ('active', 'delayed')
+       AND (loc.recorded_at IS NULL OR loc.recorded_at < NOW() - INTERVAL '5 minutes')`
+    );
+    
     return res.json({
       activeBuses: activeBuses.rows[0].n,
       totalBuses: totalBuses.rows[0].n,
@@ -23,6 +47,9 @@ router.get('/overview', async (_req, res) => {
       todayTrips: todayTrips.rows[0].n,
       delayedTrips: delayed.rows[0].n,
       drivers: drivers.rows[0].n,
+      activeEmergencies: emergencies.rows[0].n,
+      capacityRisks: capacityRisks.rows[0].n,
+      staleGPS: staleGPS.rows[0].n,
     });
   } catch (err) {
     console.error(err);
@@ -135,6 +162,134 @@ router.get('/analytics', async (_req, res) => {
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Failed to load analytics' });
+  }
+});
+
+// Emergency Alerts
+router.get('/emergencies', async (_req, res) => {
+  try {
+    const { rows } = await query(
+      `SELECT ea.*, b.number AS bus_number, d.id AS driver_row_id, u.full_name AS driver_name, r.name AS route_name
+       FROM emergency_alerts ea
+       JOIN buses b ON b.id = ea.bus_id
+       JOIN drivers d ON d.id = ea.driver_id
+       JOIN users u ON u.id = d.user_id
+       JOIN trips t ON t.id = ea.trip_id
+       JOIN routes r ON r.id = t.route_id
+       WHERE ea.status IN ('active', 'acknowledged')
+       ORDER BY ea.created_at DESC LIMIT 50`
+    );
+    return res.json({ emergencies: rows });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Failed to load emergencies' });
+  }
+});
+
+router.put('/emergencies/:id/acknowledge', async (req, res) => {
+  try {
+    const { rows } = await query(
+      `UPDATE emergency_alerts
+       SET status = 'acknowledged',
+           acknowledged_at = NOW(),
+           acknowledged_by = $1,
+           updated_at = NOW()
+       WHERE id = $2 AND status = 'active'
+       RETURNING *`,
+      [req.user.id, req.params.id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Emergency not found or already handled' });
+    return res.json({ alert: rows[0] });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Failed to acknowledge emergency' });
+  }
+});
+
+router.put('/emergencies/:id/resolve', async (req, res) => {
+  try {
+    const { rows } = await query(
+      `UPDATE emergency_alerts
+       SET status = 'resolved',
+           acknowledged_at = NOW(),
+           acknowledged_by = $1,
+           updated_at = NOW()
+       WHERE id = $2
+       RETURNING *`,
+      [req.user.id, req.params.id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Emergency not found' });
+    return res.json({ alert: rows[0] });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Failed to resolve emergency' });
+  }
+});
+
+// Announcements Management
+router.get('/announcements', async (_req, res) => {
+  try {
+    const { rows } = await query(
+      `SELECT a.*, u.full_name AS created_by_name
+       FROM announcements a
+       LEFT JOIN users u ON u.id = a.created_by
+       ORDER BY a.created_at DESC LIMIT 100`
+    );
+    return res.json({ announcements: rows });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Failed to load announcements' });
+  }
+});
+
+router.post('/announcements', async (req, res) => {
+  try {
+    const { title, body, severity = 'info' } = req.body || {};
+    if (!title || !body) {
+      return res.status(400).json({ error: 'Title and body are required' });
+    }
+    const { rows } = await query(
+      `INSERT INTO announcements (title, body, severity, created_by, is_active)
+       VALUES ($1, $2, $3, $4, TRUE)
+       RETURNING *`,
+      [title, body, severity, req.user.id]
+    );
+    return res.status(201).json({ announcement: rows[0] });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Failed to create announcement' });
+  }
+});
+
+router.put('/announcements/:id', async (req, res) => {
+  try {
+    const { title, body, severity, isActive } = req.body || {};
+    const { rows } = await query(
+      `UPDATE announcements
+       SET title = COALESCE($1, title),
+           body = COALESCE($2, body),
+           severity = COALESCE($3, severity),
+           is_active = COALESCE($4, is_active)
+       WHERE id = $5
+       RETURNING *`,
+      [title || null, body || null, severity || null, isActive ?? null, req.params.id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Announcement not found' });
+    return res.json({ announcement: rows[0] });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Failed to update announcement' });
+  }
+});
+
+router.delete('/announcements/:id', async (req, res) => {
+  try {
+    const { rows } = await query('DELETE FROM announcements WHERE id = $1 RETURNING id', [req.params.id]);
+    if (!rows[0]) return res.status(404).json({ error: 'Announcement not found' });
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Failed to delete announcement' });
   }
 });
 

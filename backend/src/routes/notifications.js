@@ -54,7 +54,13 @@ router.post('/announce', authenticate, requireRole('admin'), async (req, res) =>
 
 router.get('/announcements', authenticate, async (_req, res) => {
   try {
-    const { rows } = await query('SELECT * FROM announcements ORDER BY created_at DESC LIMIT 20');
+    const { rows } = await query(
+      `SELECT a.*, u.full_name AS created_by_name
+       FROM announcements a
+       LEFT JOIN users u ON u.id = a.created_by
+       WHERE a.is_active = TRUE
+       ORDER BY a.created_at DESC LIMIT 20`
+    );
     return res.json({ announcements: rows });
   } catch (err) {
     console.error(err);

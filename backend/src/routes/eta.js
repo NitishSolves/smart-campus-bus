@@ -8,11 +8,11 @@ const router = express.Router();
 router.get('/trip/:tripId', authenticate, async (req, res) => {
   try {
     const tripRes = await query(
-      `SELECT t.*, r.path, loc.lat, loc.lng, loc.speed_kmh
+      `SELECT t.*, r.path, loc.lat, loc.lng, loc.speed_kmh, loc.recorded_at
        FROM trips t
        JOIN routes r ON r.id = t.route_id
        LEFT JOIN LATERAL (
-         SELECT lat, lng, speed_kmh FROM bus_locations WHERE trip_id = t.id ORDER BY recorded_at DESC LIMIT 1
+         SELECT lat, lng, speed_kmh, recorded_at FROM bus_locations WHERE trip_id = t.id ORDER BY recorded_at DESC LIMIT 1
        ) loc ON TRUE
        WHERE t.id = $1`,
       [req.params.tripId]
@@ -44,11 +44,13 @@ router.get('/trip/:tripId', authenticate, async (req, res) => {
         speedKmh: Number(trip.speed_kmh || 18),
         historicalSeconds: hist.rows[0]?.avg_seconds,
         delayMinutes: Number(trip.delay_minutes || 0),
+        lastLocationTime: trip.recorded_at,
+        tripStatus: trip.status,
       });
       await query(
         `INSERT INTO eta_predictions (trip_id, stop_id, eta_minutes, remaining_distance_m, method)
-         VALUES ($1, $2, $3, $4, 'distance_speed_blend')`,
-        [trip.id, stop.id, eta.etaMinutes, eta.remainingDistanceM]
+         VALUES ($1, $2, $3, $4, $5)`,
+        [trip.id, stop.id, eta.etaMinutes, eta.remainingDistanceM, eta.calculationMode]
       );
       predictions.push({
         stopId: stop.id,
@@ -56,10 +58,12 @@ router.get('/trip/:tripId', authenticate, async (req, res) => {
         stopOrder: stop.stop_order,
         etaMinutes: eta.etaMinutes,
         remainingDistanceM: eta.remainingDistanceM,
-        method: 'distance_speed_blend',
+        calculationMode: eta.calculationMode,
+        isStale: eta.isStale,
+        lastUpdated: eta.lastUpdated,
       });
     }
-    return res.json({ tripId: trip.id, predictions });
+    return res.json({ tripId: trip.id, predictions, busStatus: trip.status });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Failed to compute ETA' });

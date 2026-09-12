@@ -249,7 +249,13 @@ async function seed() {
      RETURNING id`,
     [busIds['BUS-02'], driverIds['driver3@campus.edu'], routeIds.C]
   );
-  void completed;
+
+  // Seed historical emergency for demo
+  await query(
+    `INSERT INTO emergency_alerts (trip_id, bus_id, driver_id, lat, lng, message, status, acknowledged_at, acknowledged_by, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, 'resolved', NOW() - INTERVAL '30 minutes', $7, NOW() - INTERVAL '45 minutes')`,
+    [completed.rows[0].id, busIds['BUS-02'], driverIds['driver3@campus.edu'], 12.9822, 77.5826, 'Mechanical issue - resolved', admin.rows[0].id]
+  );
 
   console.log('Seed complete');
   console.log('Students: student@campus.edu / student123');

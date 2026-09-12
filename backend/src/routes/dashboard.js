@@ -26,11 +26,14 @@ router.get('/', authenticate, async (req, res) => {
         stop: { lat: Number(targetStop.lat), lng: Number(targetStop.lng) },
         speedKmh: bus.speedKmh || 12,
         delayMinutes: bus.delayMinutes || 0,
+        lastLocationTime: bus.lastLocationTime,
+        tripStatus: bus.status,
       });
       return {
         ...bus,
         etaMinutes: eta.etaMinutes,
         remainingDistanceM: eta.remainingDistanceM,
+        calculationMode: eta.calculationMode,
         nextStop: { id: targetStop.id, name: targetStop.name, lat: targetStop.lat, lng: targetStop.lng },
         studentStop: true,
       };
@@ -53,7 +56,15 @@ router.get('/', authenticate, async (req, res) => {
       'SELECT * FROM notifications WHERE (user_id = $1 OR user_id IS NULL) ORDER BY created_at DESC LIMIT 8',
       [req.user.id]
     );
-    const routes = await query('SELECT id, code, name, start_name, end_name, status, duration_minutes FROM routes ORDER BY code');
+    const routes = await query(
+      `SELECT r.id, r.code, r.name, r.start_name, r.end_name, r.status, r.duration_minutes,
+              json_agg(json_build_object('id', s.id, 'name', s.name, 'lat', s.lat, 'lng', s.lng)) FILTER (WHERE s.id IS NOT NULL) as stops
+       FROM routes r
+       LEFT JOIN route_stops rs ON rs.route_id = r.id
+       LEFT JOIN stops s ON s.id = rs.stop_id
+       GROUP BY r.id, r.code, r.name, r.start_name, r.end_name, r.status, r.duration_minutes
+       ORDER BY r.code`
+    );
     return res.json({
       nextBus: nextBus
         ? {
@@ -66,6 +77,7 @@ router.get('/', authenticate, async (req, res) => {
       favorites: favorites.rows,
       notifications: notifications.rows,
       routes: routes.rows,
+      favoriteStop: targetStop,
       defaultStopId: favStop,
     });
   } catch (err) {

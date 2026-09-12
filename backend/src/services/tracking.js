@@ -21,6 +21,10 @@ function emitNotification(notification) {
   if (ioRef) ioRef.emit('notification:new', notification);
 }
 
+function emitEmergency(alert) {
+  if (ioRef) ioRef.emit('emergency:alert', alert);
+}
+
 async function getActiveTracking() {
   const { rows } = await query(
     `SELECT t.*, b.number AS bus_number, b.capacity, b.status AS bus_status,
@@ -225,6 +229,7 @@ module.exports = {
   emitTracking,
   emitTrip,
   emitNotification,
+  emitEmergency,
   getActiveTracking,
   recordLocation,
   simulateTick,
