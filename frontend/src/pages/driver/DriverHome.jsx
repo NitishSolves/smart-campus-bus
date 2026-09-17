@@ -14,8 +14,14 @@ export default function DriverHome() {
   async function load() {
     try {
       const res = await api('/api/driver/me');
-      setData(res);
-      if (res.trip) setOccupancy(res.trip.occupancy || 0);
+      setData((prev) => {
+        // Only sync the passenger input when the trip changes, so periodic
+        // socket refreshes don't overwrite what the driver is typing.
+        if (res.trip && res.trip.id !== prev?.trip?.id) {
+          setOccupancy(res.trip.occupancy ?? 0);
+        }
+        return res;
+      });
       setError('');
     } catch (e) {
       setError(e.message);
@@ -46,29 +52,39 @@ export default function DriverHome() {
     await act('/api/driver/trip/occupancy', { passengerCount: count });
   }
 
-  async function updateLocation() {
-    setBusy('/api/driver/trip/location');
-    try {
-      if (useGPS && navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(
-          (pos) => {
-            act('/api/driver/trip/location', {
-              lat: pos.coords.latitude,
-              lng: pos.coords.longitude,
-              speedKmh: pos.coords.speed || 18,
-            });
-          },
-          () => {
-            setError('GPS permission denied, using simulation');
-            act('/api/driver/trip/location', { useSimulation: true });
-          }
-        );
-      } else {
-        await act('/api/driver/trip/location', { useSimulation: true });
-      }
-    } finally {
-      setBusy('');
+  function sendSimulated() {
+    return act('/api/driver/trip/location', { useSimulation: true });
+  }
+
+  function updateLocation() {
+    if (!useGPS) {
+      sendSimulated();
+      return;
     }
+    if (!navigator.geolocation) {
+      setError('Geolocation is not supported on this device. Using simulation.');
+      sendSimulated();
+      return;
+    }
+    setBusy('/api/driver/trip/location');
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        // coords.speed is metres/second; the API expects km/h.
+        const speedKmh = Number.isFinite(pos.coords.speed) && pos.coords.speed > 0
+          ? Math.round(pos.coords.speed * 3.6)
+          : 18;
+        act('/api/driver/trip/location', {
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          speedKmh,
+        }).finally(() => setBusy(''));
+      },
+      () => {
+        setError('GPS permission denied. Falling back to simulation for this update.');
+        sendSimulated().finally(() => setBusy(''));
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
   }
 
   async function triggerEmergency() {
@@ -188,7 +204,7 @@ export default function DriverHome() {
             onClick={() => setShowEmergencyConfirm(true)}
             className="min-h-12 w-full cursor-pointer rounded-2xl bg-red-600 text-lg font-semibold text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            🚨 Emergency Alert
+            Emergency Alert
           </button>
 
           <button
@@ -204,7 +220,7 @@ export default function DriverHome() {
       {showEmergencyConfirm && (
         <div className="fixed inset-0 bg-black/50 flex items-end md:items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
-            <h2 className="text-xl font-semibold text-red-700">⚠️ Emergency Alert</h2>
+            <h2 className="text-xl font-semibold text-red-700">Emergency Alert</h2>
             <p className="text-slate-700">
               This will immediately notify all administrators. Use only in genuine emergencies.
             </p>

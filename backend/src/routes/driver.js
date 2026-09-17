@@ -21,6 +21,10 @@ async function getDriverRecord(userId) {
   return rows[0] || null;
 }
 
+function noDriverProfile(res) {
+  return res.status(400).json({ error: 'No driver profile is associated with this account' });
+}
+
 router.get('/me', authenticate, requireRole('driver', 'admin'), async (req, res) => {
   try {
     const driver = await getDriverRecord(req.user.id);
@@ -45,17 +49,18 @@ router.get('/me', authenticate, requireRole('driver', 'admin'), async (req, res)
         [trip.id]
       );
       const path = Array.isArray(driver.path) ? driver.path : [];
-      const point = {
-        lat: Number(loc.rows[0]?.lat ?? path[0]?.lat ?? 0),
-        lng: Number(loc.rows[0]?.lng ?? path[0]?.lng ?? 0),
-      };
+      const point = loc.rows[0]
+        ? { lat: Number(loc.rows[0].lat), lng: Number(loc.rows[0].lng) }
+        : null;
       if (nextStop) {
         etaMinutes = computeStopEta({
           point,
           path,
           stop: { lat: Number(nextStop.lat), lng: Number(nextStop.lng) },
-          speedKmh: Number(loc.rows[0]?.speed_kmh || 18),
+          speedKmh: Number(loc.rows[0]?.speed_kmh ?? 0),
           delayMinutes: Number(trip.delay_minutes || 0),
+          lastLocationTime: loc.rows[0]?.recorded_at,
+          tripStatus: trip.status,
         }).etaMinutes;
       }
     }
@@ -80,6 +85,7 @@ router.post('/trip/location', authenticate, requireRole('driver', 'admin'), asyn
   try {
     const { lat, lng, speedKmh, useSimulation = true } = req.body || {};
     const driver = await getDriverRecord(req.user.id);
+    if (!driver) return noDriverProfile(res);
     const tripRes = await query(
       `SELECT * FROM trips WHERE driver_id = $1 AND status IN ('active', 'delayed') ORDER BY started_at DESC LIMIT 1`,
       [driver.id]
@@ -91,23 +97,30 @@ router.post('/trip/location', authenticate, requireRole('driver', 'admin'), asyn
     let finalLng = lng;
     let finalSpeed = speedKmh || 18;
     let nextProgress = trip.progress || 0;
+    let mode = 'SIMULATED';
 
     // If real GPS provided, use it; otherwise simulate
-    if (lat !== undefined && lng !== undefined && lat !== null && lng !== null) {
-      // Validate coordinates
+    const hasLiveCoords = lat !== undefined && lat !== null && lng !== undefined && lng !== null;
+    if (hasLiveCoords) {
       if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
         return res.status(400).json({ error: 'Invalid coordinates' });
       }
-      finalLat = lat;
-      finalLng = lng;
+      finalLat = Number(lat);
+      finalLng = Number(lng);
+      mode = 'LIVE';
     } else if (useSimulation) {
       const path = Array.isArray(driver.path) ? driver.path : [];
       nextProgress = Math.min(0.99, Number(trip.progress || 0) + 0.04);
       const point = interpolatePath(path, nextProgress);
       finalLat = point.lat;
       finalLng = point.lng;
+      mode = 'SIMULATED';
     } else {
       return res.status(400).json({ error: 'Either provide real coordinates or enable simulation' });
+    }
+
+    if (!Number.isFinite(Number(finalLat)) || !Number.isFinite(Number(finalLng))) {
+      return res.status(400).json({ error: 'Coordinates must be finite numbers' });
     }
 
     const record = await tracking.recordLocation({
@@ -118,8 +131,9 @@ router.post('/trip/location', authenticate, requireRole('driver', 'admin'), asyn
       heading: undefined,
       progress: nextProgress,
       occupancy: trip.occupancy,
+      source: mode === 'LIVE' ? 'device' : 'simulation',
     });
-    return res.json({ location: record, progress: nextProgress, mode: lat ? 'LIVE' : 'SIMULATED' });
+    return res.json({ location: record, progress: nextProgress, mode });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Failed to update location' });
@@ -154,8 +168,9 @@ router.post('/trip/occupancy', authenticate, requireRole('driver', 'admin'), asy
       `UPDATE trips SET occupancy = $1, updated_at = NOW() WHERE id = $2 RETURNING *`,
       [passengerCount, trip.id]
     );
-    
+    tracking.lockOccupancy(trip.id);
     tracking.emitTrip(rows[0]);
+    tracking.emitTracking({ buses: await tracking.getActiveTracking(), changedTripId: trip.id });
     return res.json({ trip: rows[0], message: `Occupancy updated to ${passengerCount}/${driver.capacity}` });
   } catch (err) {
     console.error(err);
@@ -167,6 +182,7 @@ router.post('/trip/delay', authenticate, requireRole('driver', 'admin'), async (
   try {
     const { minutes = 5, reason = 'Traffic delay' } = req.body || {};
     const driver = await getDriverRecord(req.user.id);
+    if (!driver) return noDriverProfile(res);
     const { rows } = await query(
       `UPDATE trips SET status = 'delayed', delay_minutes = delay_minutes + $1, delay_reason = $2, updated_at = NOW()
        WHERE driver_id = $3 AND status IN ('active', 'delayed')
@@ -191,6 +207,7 @@ router.post('/trip/delay', authenticate, requireRole('driver', 'admin'), async (
 router.post('/trip/end', authenticate, requireRole('driver', 'admin'), async (req, res) => {
   try {
     const driver = await getDriverRecord(req.user.id);
+    if (!driver) return noDriverProfile(res);
     const tripRes = await query(
       `SELECT * FROM trips WHERE driver_id = $1 AND status IN ('active', 'delayed') ORDER BY started_at DESC LIMIT 1`,
       [driver.id]
@@ -231,7 +248,7 @@ router.post('/emergency', authenticate, requireRole('driver', 'admin'), async (r
     await query(
       `INSERT INTO notifications (user_id, type, title, body, related_bus_id)
        SELECT id, 'emergency', $1, $2, $3 FROM users WHERE role = 'admin'`,
-      [`🚨 Emergency: ${driver.bus_number}`, `Driver ${driver.full_name} triggered emergency on ${driver.route_name}`, driver.assigned_bus_id]
+      [`Emergency: ${driver.bus_number}`, `Driver ${driver.full_name} triggered emergency on ${driver.route_name}`, driver.assigned_bus_id]
     );
 
     return res.status(201).json({ alert });
@@ -244,6 +261,7 @@ router.post('/emergency', authenticate, requireRole('driver', 'admin'), async (r
 router.get('/history', authenticate, requireRole('driver', 'admin'), async (req, res) => {
   try {
     const driver = await getDriverRecord(req.user.id);
+    if (!driver) return noDriverProfile(res);
     const { rows } = await query(
       `SELECT t.*, r.code AS route_code, r.name AS route_name, b.number AS bus_number
        FROM trips t

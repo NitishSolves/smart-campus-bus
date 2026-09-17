@@ -5,17 +5,35 @@ import { api } from '../api';
 import MapView from '../components/MapView.jsx';
 import { OccupancyIndicator, StatusBadge, ErrorState, Skeleton } from '../components/ui.jsx';
 
+function crowdLevel(occupancy, capacity) {
+  const ratio = capacity > 0 ? occupancy / capacity : 0;
+  if (ratio < 0.4) return 'low';
+  if (ratio < 0.75) return 'medium';
+  return 'high';
+}
+
 export default function RouteDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
+  const [saved, setSaved] = useState(false);
 
   useEffect(() => {
     api(`/api/routes/${id}`).then(setData).catch((e) => setError(e.message));
   }, [id]);
 
-  if (error) return <ErrorState message={error} />;
+  async function saveFavorite() {
+    setError('');
+    try {
+      await api('/api/favorites', { method: 'POST', body: JSON.stringify({ targetType: 'route', targetId: id }) });
+      setSaved(true);
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  if (error && !data) return <ErrorState message={error} />;
   if (!data) return <Skeleton className="h-64 w-full" />;
   const { route, demand } = data;
 
@@ -28,12 +46,14 @@ export default function RouteDetail() {
         </div>
         <button
           type="button"
-          className="flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border border-line bg-white px-3 text-sm"
-          onClick={() => api('/api/favorites', { method: 'POST', body: JSON.stringify({ targetType: 'route', targetId: route.id }) })}
+          className="flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border border-line bg-white px-3 text-sm disabled:opacity-60"
+          onClick={saveFavorite}
+          disabled={saved}
         >
-          <Star size={16} /> Save
+          <Star size={16} /> {saved ? 'Saved' : 'Save'}
         </button>
       </div>
+      {error && <p className="rounded-xl bg-red-50 p-3 text-sm text-red-700" role="alert">{error}</p>}
       <div className="flex flex-wrap gap-2">
         <StatusBadge status={route.status} />
         <StatusBadge status={demand.level} />
@@ -54,8 +74,11 @@ export default function RouteDetail() {
       </ol>
       {route.activeTrips?.map((t) => (
         <div key={t.id} className="rounded-2xl border border-line bg-white p-4">
-          <p className="font-semibold">{t.bus_number} is on this route</p>
-          <OccupancyIndicator level="medium" occupancy={t.occupancy} capacity={40} />
+          <div className="mb-2 flex items-center justify-between">
+            <p className="font-semibold">{t.bus_number} is on this route</p>
+            <StatusBadge status={t.status} />
+          </div>
+          <OccupancyIndicator level={crowdLevel(t.occupancy, t.capacity)} occupancy={t.occupancy} capacity={t.capacity} />
         </div>
       ))}
     </div>

@@ -44,7 +44,12 @@ export function AuthProvider({ children }) {
         setUser(data.user);
         return data.user;
       },
-      logout() {
+      async logout() {
+        try {
+          await api('/api/auth/logout', { method: 'POST' });
+        } catch {
+          /* token may already be invalid */
+        }
         setToken(null);
         setUser(null);
       },

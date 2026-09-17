@@ -36,7 +36,8 @@ export default function Dashboard() {
   useEffect(() => { load(); }, []);
   useSocket((payload) => {
     if (payload?.buses) {
-      setData((prev) => prev ? { ...prev, activeBuses: payload.buses, nextBus: [...payload.buses].sort((a, b) => a.etaMinutes - b.etaMinutes)[0] || null } : prev);
+      const sorted = [...payload.buses].sort((a, b) => (a.etaMinutes ?? Infinity) - (b.etaMinutes ?? Infinity));
+      setData((prev) => prev ? { ...prev, activeBuses: payload.buses, nextBus: sorted[0] || null } : prev);
     }
   });
 
@@ -53,10 +54,9 @@ export default function Dashboard() {
   if (!data) return <EmptyState title="No data" body="Dashboard is unavailable right now." />;
 
   const pickupStop = data.favoriteStop;
-  const busesAtStop = data.activeBuses?.filter(b => {
-    const route = data.routes?.find(r => r.id === b.routeId);
-    return route?.stops?.some(s => s.id === pickupStop?.id);
-  }) || [];
+  const busesAtStop = (data.activeBuses || [])
+    .filter((b) => pickupStop && (b.stops || []).some((s) => s.id === pickupStop.id))
+    .sort((a, b) => (a.etaMinutes ?? Infinity) - (b.etaMinutes ?? Infinity));
 
   return (
     <div className="space-y-6 pb-24">
@@ -99,7 +99,9 @@ export default function Dashboard() {
                     <p className="text-xs text-slate-600">Route {bus.routeCode}</p>
                   </div>
                   <div className="text-right">
-                    <p className="text-xl font-bold text-blue-600">{Math.round(bus.etaMinutes)}m</p>
+                    <p className="text-xl font-bold text-blue-600">
+                      {bus.etaMinutes != null ? `${Math.round(bus.etaMinutes)}m` : '—'}
+                    </p>
                     <p className="text-xs text-slate-600">
                       {bus.occupancy}/{bus.capacity} passengers
                     </p>
@@ -172,7 +174,7 @@ export default function Dashboard() {
                 <div className="grid grid-cols-3 gap-2 mt-3 text-center">
                   <div>
                     <Clock className="w-4 h-4 mx-auto text-slate-400 mb-1" />
-                    <p className="text-sm font-semibold text-slate-900">{Math.round(bus.etaMinutes)}m</p>
+                    <p className="text-sm font-semibold text-slate-900">{bus.etaMinutes != null ? `${Math.round(bus.etaMinutes)}m` : '—'}</p>
                     <p className="text-xs text-slate-500">ETA</p>
                   </div>
                   <div>
@@ -182,7 +184,7 @@ export default function Dashboard() {
                   </div>
                   <div>
                     <MapPin className="w-4 h-4 mx-auto text-slate-400 mb-1" />
-                    <p className="text-sm font-semibold text-slate-900">{Math.round(bus.progress * 100)}%</p>
+                    <p className="text-sm font-semibold text-slate-900">{Math.round((bus.progress || 0) * 100)}%</p>
                     <p className="text-xs text-slate-500">Progress</p>
                   </div>
                 </div>

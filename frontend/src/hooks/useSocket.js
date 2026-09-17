@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
-import { getBackendOrigin } from '../api';
+import { getBackendOrigin, getToken } from '../api';
 
 export function useSocket(onTracking) {
   const [connected, setConnected] = useState(false);
@@ -10,9 +10,12 @@ export function useSocket(onTracking) {
   cb.current = onTracking;
 
   useEffect(() => {
-    if (socketRef.current) return; // Prevent duplicate connections
+    const token = getToken();
+    if (!token) return undefined;
+    if (socketRef.current) return undefined; // Prevent duplicate connections
 
     const socket = io(getBackendOrigin() || '/', {
+      auth: { token },
       transports: ['websocket', 'polling'],
       reconnection: true,
       reconnectionDelay: 1000,
@@ -22,40 +25,29 @@ export function useSocket(onTracking) {
 
     socketRef.current = socket;
 
-    socket.on('connect', () => {
-      console.log('Socket connected');
-      setConnected(true);
-    });
-
-    socket.on('disconnect', (reason) => {
-      console.log('Socket disconnected:', reason);
-      setConnected(false);
-    });
-
+    socket.on('connect', () => setConnected(true));
+    socket.on('disconnect', () => setConnected(false));
     socket.on('connect_error', (err) => {
-      console.error('Socket connection error:', err);
+      console.warn('[socket] connection error:', err.message);
+      setConnected(false);
     });
 
     // Tracking and trip updates
     socket.on('tracking:update', (payload) => cb.current?.(payload));
     socket.on('trip:update', (payload) => cb.current?.({ trip: payload }));
     socket.on('notification:new', (payload) => cb.current?.({ notification: payload }));
-    
-    // Emergency alerts
     socket.on('emergency:alert', (payload) => cb.current?.({ emergency: payload }));
 
     return () => {
-      if (socketRef.current) {
-        socketRef.current.off('connect');
-        socketRef.current.off('disconnect');
-        socketRef.current.off('connect_error');
-        socketRef.current.off('tracking:update');
-        socketRef.current.off('trip:update');
-        socketRef.current.off('notification:new');
-        socketRef.current.off('emergency:alert');
-        socketRef.current.close();
-        socketRef.current = null;
-      }
+      socket.off('connect');
+      socket.off('disconnect');
+      socket.off('connect_error');
+      socket.off('tracking:update');
+      socket.off('trip:update');
+      socket.off('notification:new');
+      socket.off('emergency:alert');
+      socket.close();
+      socketRef.current = null;
     };
   }, []);
 

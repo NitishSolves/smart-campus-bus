@@ -6,8 +6,12 @@ demand history, favorites and notifications.
 
 Location flow:
 
-Driver or simulator -> POST /api/tracking/location -> bus_locations
+Driver device GPS, driver-triggered simulation, or the demo simulator
+-> recordLocation(source) -> bus_locations
 -> Socket.IO tracking:update -> live map and ETA panel.
+
+Sources are registered in `backend/src/services/locationSources.js`.
+The demo simulator never overwrites a trip that is reporting device GPS.
 
 ETA = remaining path distance / estimated speed, blended with historical
 segment travel times and current delay minutes.

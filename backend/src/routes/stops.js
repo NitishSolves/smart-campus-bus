@@ -46,29 +46,34 @@ router.get('/:id', authenticate, async (req, res) => {
     );
     const upcoming = trips.rows.map((trip) => {
       const path = Array.isArray(trip.path) ? trip.path : [];
-      const point = {
-        lat: Number(trip.lat || path[0]?.lat || stop.lat),
-        lng: Number(trip.lng || path[0]?.lng || stop.lng),
-      };
+      const point = trip.lat != null && trip.lng != null
+        ? { lat: Number(trip.lat), lng: Number(trip.lng) }
+        : null;
       const eta = computeStopEta({
         point,
         path,
         stop: { lat: Number(stop.lat), lng: Number(stop.lng) },
-        speedKmh: Number(trip.speed_kmh || 18),
+        speedKmh: Number(trip.speed_kmh ?? 0),
         delayMinutes: Number(trip.delay_minutes || 0),
+        lastLocationTime: trip.recorded_at,
+        tripStatus: trip.status,
       });
       return {
         tripId: trip.id,
+        busId: trip.bus_id,
         busNumber: trip.bus_number,
         routeCode: trip.route_code,
         routeName: trip.route_name,
         status: trip.status,
         occupancy: trip.occupancy,
+        capacity: trip.capacity,
         crowd: crowdLevel(trip.occupancy, trip.capacity),
         etaMinutes: eta.etaMinutes,
         remainingDistanceM: eta.remainingDistanceM,
+        calculationMode: eta.calculationMode,
+        available: eta.available,
       };
-    }).sort((a, b) => a.etaMinutes - b.etaMinutes);
+    }).sort((a, b) => (a.etaMinutes ?? Infinity) - (b.etaMinutes ?? Infinity));
     return res.json({ stop, routes: routes.rows, upcoming });
   } catch (err) {
     console.error(err);

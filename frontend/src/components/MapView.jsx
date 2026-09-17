@@ -22,13 +22,14 @@ function FitBounds({ points }) {
 }
 
 export default function MapView({ buses = [], stops = [], selectedId, path = [], onSelect }) {
-  const center = buses[0]
-    ? [buses[0].lat, buses[0].lng]
+  const locatedBuses = buses.filter((b) => b.lat != null && b.lng != null && Number.isFinite(Number(b.lat)) && Number.isFinite(Number(b.lng)));
+  const center = locatedBuses[0]
+    ? [locatedBuses[0].lat, locatedBuses[0].lng]
     : stops[0]
       ? [Number(stops[0].lat), Number(stops[0].lng)]
       : [12.9752, 77.5948];
   const fitPoints = [
-    ...buses.map((b) => ({ lat: b.lat, lng: b.lng })),
+    ...locatedBuses.map((b) => ({ lat: b.lat, lng: b.lng })),
     ...stops.map((s) => ({ lat: Number(s.lat), lng: Number(s.lng) })),
     ...path,
   ].filter((p) => p.lat && p.lng);
@@ -53,7 +54,7 @@ export default function MapView({ buses = [], stops = [], selectedId, path = [],
           <Popup>{stop.name}</Popup>
         </CircleMarker>
       ))}
-      {buses.map((bus) => (
+      {locatedBuses.map((bus) => (
         <Marker
           key={bus.tripId || bus.busId}
           position={[bus.lat, bus.lng]}
@@ -63,7 +64,7 @@ export default function MapView({ buses = [], stops = [], selectedId, path = [],
           <Popup>
             <strong>{bus.busNumber}</strong>
             <div>Route {bus.routeCode}</div>
-            <div>{Math.round(bus.etaMinutes)} min · {bus.nextStop?.name}</div>
+            <div>{bus.etaMinutes != null ? `${Math.round(bus.etaMinutes)} min` : 'ETA unavailable'} · {bus.nextStop?.name || 'end of route'}</div>
           </Popup>
         </Marker>
       ))}

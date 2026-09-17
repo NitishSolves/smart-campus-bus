@@ -49,7 +49,11 @@ export default function AdminOverview() {
   }
 
   useEffect(() => { load(); }, []);
-  useSocket((p) => { if (p?.buses) setBuses(p.buses); });
+  useSocket((p) => {
+    if (p?.buses) setBuses(p.buses);
+    if (p?.emergency) load();
+    if (p?.trip) load();
+  });
 
   if (error) return <ErrorState message={error} onRetry={load} />;
   if (!overview) return <Skeleton className="h-40 w-full" />;

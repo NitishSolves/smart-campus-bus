@@ -29,7 +29,8 @@ export default function Track() {
   }
 
   useEffect(() => { load(); }, []);
-  const selected = buses.find((b) => b.busId === selectedId) || buses[0];
+  const located = buses.filter((b) => b.lat != null && b.lng != null);
+  const selected = located.find((b) => b.busId === selectedId) || located[0];
   const stops = selected?.stops || [];
   const path = selected?.path || [];
 
@@ -47,7 +48,7 @@ export default function Track() {
   return (
     <div className="flex min-h-[70vh] flex-col gap-4 lg:flex-row">
       <div className="h-[52vh] min-h-[320px] flex-1 overflow-hidden rounded-2xl border border-line lg:h-[calc(100dvh-8rem)]">
-        <MapView buses={buses} stops={stops} path={path} selectedId={selected?.busId} onSelect={(b) => setSelectedId(b.busId)} />
+        <MapView buses={located} stops={stops} path={path} selectedId={selected?.busId} onSelect={(b) => setSelectedId(b.busId)} />
       </div>
       {selected && (
         <aside className="rounded-2xl border border-line bg-white p-5 shadow-sheet lg:w-96">
@@ -56,8 +57,17 @@ export default function Track() {
             <StatusBadge status={selected.status === 'active' ? 'on-time' : selected.status} />
           </div>
           <p className="mt-1 text-sm text-slate-600">Route {selected.routeCode} · {selected.routeName}</p>
-          <p className="mt-4 text-3xl font-semibold">{Math.max(1, Math.round(selected.etaMinutes))} min</p>
-          <p className="text-sm text-slate-600">to {selected.nextStop?.name || 'end of route'}</p>
+          {selected.etaMinutes != null ? (
+            <>
+              <p className="mt-4 text-3xl font-semibold">{Math.max(1, Math.round(selected.etaMinutes))} min</p>
+              <p className="text-sm text-slate-600">to {selected.nextStop?.name || 'end of route'}</p>
+            </>
+          ) : (
+            <>
+              <p className="mt-4 text-2xl font-semibold text-slate-500">ETA unavailable</p>
+              <p className="text-sm text-slate-600">Waiting for a fresh GPS fix</p>
+            </>
+          )}
           <div className="mt-4">
             <OccupancyIndicator level={selected.crowd} occupancy={selected.occupancy} capacity={selected.capacity} />
           </div>

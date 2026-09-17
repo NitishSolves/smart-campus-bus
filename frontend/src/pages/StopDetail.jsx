@@ -25,12 +25,12 @@ export default function StopDetail() {
       {!data.upcoming.length && <EmptyState title="None approaching" body="No active trip is heading here right now." />}
       <div className="space-y-3">
         {data.upcoming.map((u) => (
-          <button key={u.tripId} type="button" onClick={() => navigate('/track')} className="w-full cursor-pointer rounded-2xl border border-line bg-white p-4 text-left">
+          <button key={u.tripId} type="button" onClick={() => navigate('/track', { state: { busId: u.busId } })} className="w-full cursor-pointer rounded-2xl border border-line bg-white p-4 text-left">
             <div className="flex justify-between font-semibold">
               <span>{u.busNumber} · Route {u.routeCode}</span>
-              <span>{Math.round(u.etaMinutes)} min</span>
+              <span>{u.etaMinutes != null ? `${Math.round(u.etaMinutes)} min` : 'ETA unavailable'}</span>
             </div>
-            <OccupancyIndicator level={u.crowd} occupancy={u.occupancy} capacity={40} />
+            <OccupancyIndicator level={u.crowd} occupancy={u.occupancy} capacity={u.capacity} />
           </button>
         ))}
       </div>

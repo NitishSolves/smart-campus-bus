@@ -2,8 +2,15 @@ const { query } = require('../db');
 const { interpolatePath, nearestStopIndex, crowdLevel } = require('../utils/geo');
 const { computeStopEta } = require('../utils/eta');
 const { predictDemand } = require('../utils/demand');
+const { isAutomaticSource } = require('./locationSources');
 
 let ioRef = null;
+
+// Trips currently reporting from a non-simulated provider (e.g. a real device).
+// The demo simulator must never overwrite these coordinates.
+const deviceTrips = new Set();
+// Occupancy entered by a driver should not be overwritten by the demo simulator.
+const occupancyLocked = new Set();
 
 function setIo(io) {
   ioRef = io;
@@ -55,20 +62,22 @@ async function getActiveTracking() {
     );
     const stops = stopsRes.rows;
     const path = Array.isArray(trip.path) ? trip.path : [];
-    const point = {
-      lat: Number(trip.lat ?? path[0]?.lat ?? 0),
-      lng: Number(trip.lng ?? path[0]?.lng ?? 0),
-    };
+    const hasLocation = trip.lat != null && trip.lng != null;
+    const point = hasLocation
+      ? { lat: Number(trip.lat), lng: Number(trip.lng) }
+      : null;
     const nextIdx = Math.min(trip.current_stop_index + 1, Math.max(stops.length - 1, 0));
     const nextStop = stops[nextIdx] || stops[stops.length - 1];
-    let eta = { etaMinutes: 0, remainingDistanceM: 0 };
-    if (nextStop) {
+    let eta = { etaMinutes: null, remainingDistanceM: null, calculationMode: 'UNAVAILABLE' };
+    if (nextStop && point) {
       eta = computeStopEta({
         point,
         path,
         stop: { lat: Number(nextStop.lat), lng: Number(nextStop.lng) },
-        speedKmh: Number(trip.speed_kmh || 18),
+        speedKmh: Number(trip.speed_kmh ?? 0),
         delayMinutes: Number(trip.delay_minutes || 0),
+        lastLocationTime: trip.recorded_at,
+        tripStatus: trip.status,
       });
     }
     const samples = await query(
@@ -99,15 +108,17 @@ async function getActiveTracking() {
       path,
       stops,
       driverName: trip.driver_name,
-      lat: point.lat,
-      lng: point.lng,
+      lat: point ? point.lat : null,
+      lng: point ? point.lng : null,
       heading: Number(trip.heading || 0),
-      speedKmh: Number(trip.speed_kmh || 18),
+      speedKmh: Number(trip.speed_kmh ?? 0),
       progress: Number(trip.progress || 0),
       currentStopIndex: trip.current_stop_index,
       nextStop: nextStop ? { id: nextStop.id, name: nextStop.name, lat: nextStop.lat, lng: nextStop.lng } : null,
       etaMinutes: eta.etaMinutes,
       remainingDistanceM: eta.remainingDistanceM,
+      calculationMode: eta.calculationMode,
+      locationSource: deviceTrips.has(trip.id) ? 'device' : 'simulation',
       lastUpdate: trip.recorded_at || trip.updated_at,
       demand,
       startedAt: trip.started_at,
@@ -116,14 +127,19 @@ async function getActiveTracking() {
   return result;
 }
 
-async function recordLocation({ tripId, lat, lng, speedKmh, heading, progress, currentStopIndex, occupancy }) {
+async function recordLocation({ tripId, lat, lng, speedKmh, heading, progress, currentStopIndex, occupancy, source = 'manual' }) {
   const tripRes = await query('SELECT * FROM trips WHERE id = $1', [tripId]);
   const trip = tripRes.rows[0];
   if (!trip) return null;
+
+  if (!isAutomaticSource(source)) {
+    deviceTrips.add(tripId);
+  }
+
   await query(
     `INSERT INTO bus_locations (trip_id, bus_id, lat, lng, speed_kmh, heading)
      VALUES ($1, $2, $3, $4, $5, $6)`,
-    [tripId, trip.bus_id, lat, lng, speedKmh || 18, heading || 0]
+    [tripId, trip.bus_id, lat, lng, speedKmh ?? 0, heading ?? 0]
   );
   const { rows } = await query(
     `UPDATE trips
@@ -135,9 +151,17 @@ async function recordLocation({ tripId, lat, lng, speedKmh, heading, progress, c
      RETURNING *`,
     [progress ?? null, currentStopIndex ?? null, occupancy ?? null, tripId]
   );
-  const payload = (await getActiveTracking()).find((t) => t.tripId === tripId);
-  emitTracking({ buses: await getActiveTracking(), changedTripId: tripId });
-  return payload || rows[0];
+  const buses = await getActiveTracking();
+  emitTracking({ buses, changedTripId: tripId });
+  return buses.find((t) => t.tripId === tripId) || rows[0];
+}
+
+function isDeviceTrip(tripId) {
+  return deviceTrips.has(tripId);
+}
+
+function lockOccupancy(tripId) {
+  if (tripId) occupancyLocked.add(tripId);
 }
 
 async function simulateTick() {
@@ -150,6 +174,8 @@ async function simulateTick() {
      WHERE t.status IN ('active', 'delayed')`
   );
   for (const trip of rows) {
+    // Do not move a bus that is reporting real coordinates from a device.
+    if (deviceTrips.has(trip.id)) continue;
     const path = Array.isArray(trip.path) ? trip.path : [];
     if (path.length < 2) continue;
     const increment = trip.status === 'delayed' ? 0.0012 : 0.0022;
@@ -181,7 +207,8 @@ async function simulateTick() {
       heading: point.heading,
       progress,
       currentStopIndex: idx,
-      occupancy: occupancyWave,
+      occupancy: occupancyLocked.has(trip.id) ? undefined : occupancyWave,
+      source: 'simulation',
     });
   }
 }
@@ -196,6 +223,8 @@ async function completeTrip(tripId, { autoRestart = false } = {}) {
   );
   await query(`UPDATE buses SET status = 'idle', updated_at = NOW() WHERE id = $1`, [trip.bus_id]);
   await query(`UPDATE drivers SET status = 'on_duty', updated_at = NOW() WHERE id = $1`, [trip.driver_id]);
+  deviceTrips.delete(tripId);
+  occupancyLocked.delete(tripId);
   emitTrip({ tripId, status: 'completed' });
   if (autoRestart) {
     const route = await query('SELECT path FROM routes WHERE id = $1', [trip.route_id]);
@@ -217,6 +246,7 @@ async function completeTrip(tripId, { autoRestart = false } = {}) {
       progress: 0,
       currentStopIndex: 0,
       occupancy: 10,
+      source: 'simulation',
     });
     emitTrip(rows[0]);
   } else {
@@ -232,6 +262,8 @@ module.exports = {
   emitEmergency,
   getActiveTracking,
   recordLocation,
+  isDeviceTrip,
+  lockOccupancy,
   simulateTick,
   completeTrip,
 };

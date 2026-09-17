@@ -1,9 +1,18 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
+const rateLimit = require('express-rate-limit');
 const { query } = require('../db');
 const { signToken, authenticate } = require('../middleware/auth');
 
 const router = express.Router();
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many login attempts. Try again later.' },
+});
 
 router.post('/register', async (req, res) => {
   try {
@@ -35,7 +44,7 @@ router.post('/register', async (req, res) => {
   }
 });
 
-router.post('/login', async (req, res) => {
+router.post('/login', authLimiter, async (req, res) => {
   try {
     const { email, password } = req.body || {};
     if (!email || !password) {
@@ -59,6 +68,12 @@ router.post('/login', async (req, res) => {
 
 router.get('/me', authenticate, async (req, res) => {
   return res.json({ user: req.user });
+});
+
+router.post('/logout', authenticate, (_req, res) => {
+  // JWT is stateless; the client drops the token. This endpoint exists so the
+  // session-persistence flow has an explicit server confirmation.
+  return res.json({ ok: true });
 });
 
 router.put('/me', authenticate, async (req, res) => {

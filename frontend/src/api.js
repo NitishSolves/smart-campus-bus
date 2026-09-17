@@ -1,9 +1,18 @@
 const TOKEN_KEY = 'scb_token';
 
+let warnedMissingApiUrl = false;
+
 export function getApiBase() {
   const fromEnv = String(import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
   if (fromEnv) return fromEnv;
-  if (import.meta.env.PROD) return 'https://smart-campus-bus.onrender.com/api';
+  if (import.meta.env.PROD && !warnedMissingApiUrl) {
+    warnedMissingApiUrl = true;
+    // No backend URL configured: fall back to same-origin /api. Set
+    // VITE_API_URL at build time when the API is hosted on another domain.
+    console.warn(
+      '[api] VITE_API_URL is not set for this production build. Falling back to same-origin /api requests.'
+    );
+  }
   return '';
 }
 

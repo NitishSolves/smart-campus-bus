@@ -26,10 +26,9 @@ router.get('/trip/:tripId', authenticate, async (req, res) => {
       [trip.route_id]
     );
     const path = Array.isArray(trip.path) ? trip.path : [];
-    const point = {
-      lat: Number(trip.lat || path[0]?.lat || 0),
-      lng: Number(trip.lng || path[0]?.lng || 0),
-    };
+    const point = trip.lat != null && trip.lng != null
+      ? { lat: Number(trip.lat), lng: Number(trip.lng) }
+      : null;
     const predictions = [];
     for (const stop of stops.rows) {
       const hist = await query(
@@ -41,17 +40,19 @@ router.get('/trip/:tripId', authenticate, async (req, res) => {
         point,
         path,
         stop: { lat: Number(stop.lat), lng: Number(stop.lng) },
-        speedKmh: Number(trip.speed_kmh || 18),
+        speedKmh: Number(trip.speed_kmh ?? 0),
         historicalSeconds: hist.rows[0]?.avg_seconds,
         delayMinutes: Number(trip.delay_minutes || 0),
         lastLocationTime: trip.recorded_at,
         tripStatus: trip.status,
       });
-      await query(
-        `INSERT INTO eta_predictions (trip_id, stop_id, eta_minutes, remaining_distance_m, method)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [trip.id, stop.id, eta.etaMinutes, eta.remainingDistanceM, eta.calculationMode]
-      );
+      if (eta.available) {
+        await query(
+          `INSERT INTO eta_predictions (trip_id, stop_id, eta_minutes, remaining_distance_m, method)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [trip.id, stop.id, eta.etaMinutes, eta.remainingDistanceM, eta.calculationMode]
+        );
+      }
       predictions.push({
         stopId: stop.id,
         stopName: stop.name,
@@ -60,6 +61,8 @@ router.get('/trip/:tripId', authenticate, async (req, res) => {
         remainingDistanceM: eta.remainingDistanceM,
         calculationMode: eta.calculationMode,
         isStale: eta.isStale,
+        routeMismatch: eta.routeMismatch,
+        available: eta.available,
         lastUpdated: eta.lastUpdated,
       });
     }

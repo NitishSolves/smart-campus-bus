@@ -23,7 +23,7 @@ async function hydrateRoute(routeId) {
     [routeId]
   );
   const trips = await query(
-    `SELECT t.*, b.number AS bus_number
+    `SELECT t.*, b.number AS bus_number, b.capacity
      FROM trips t JOIN buses b ON b.id = t.bus_id
      WHERE t.route_id = $1 AND t.status IN ('active', 'delayed')`,
     [routeId]

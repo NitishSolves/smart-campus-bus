@@ -1204,7 +1204,7 @@ See `/SETUP_GUIDE.md` for detailed step-by-step demo workflows.
 # Setup
 npm install  # in backend and frontend
 npm run seed # backend
-npm run dev  # backend (port 5000)
+npm run dev  # backend (port 3001)
 npm run dev  # frontend (port 5173)
 
 # Database reset
@@ -1212,8 +1212,8 @@ dropdb campus_bus && createdb campus_bus && npm run seed
 
 # Useful URLs
 Frontend:     http://localhost:5173
-Backend API:  http://localhost:5000/api
-Socket.io:    ws://localhost:5000
+Backend API:  http://localhost:3001/api
+Socket.io:    ws://localhost:3001
 
 # Default Credentials
 Student:  student@campus.edu / student123

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, CartesianGrid } from 'recharts';
 import { api } from '../../api';
-import { Skeleton, ErrorState } from '../../components/ui.jsx';
+import { Skeleton, ErrorState, EmptyState } from '../../components/ui.jsx';
 
 export default function AdminAnalytics() {
   const [data, setData] = useState(null);
@@ -16,6 +16,9 @@ export default function AdminAnalytics() {
       <h1 className="text-2xl font-semibold">Analytics</h1>
       <section className="rounded-2xl border border-line bg-white p-4">
         <h2 className="mb-3 font-semibold">Trips per day</h2>
+        {!data.tripsPerDay?.length ? (
+          <EmptyState title="No trip samples" body="Trip counts appear here after trips are recorded." />
+        ) : (
         <div className="h-56">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={data.tripsPerDay}>
@@ -27,9 +30,13 @@ export default function AdminAnalytics() {
             </LineChart>
           </ResponsiveContainer>
         </div>
+        )}
       </section>
       <section className="rounded-2xl border border-line bg-white p-4">
         <h2 className="mb-3 font-semibold">Route usage</h2>
+        {!data.routeUsage?.length ? (
+          <EmptyState title="No route usage" body="Usage appears after trips run on routes." />
+        ) : (
         <div className="h-56">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={data.routeUsage}>
@@ -41,9 +48,13 @@ export default function AdminAnalytics() {
             </BarChart>
           </ResponsiveContainer>
         </div>
+        )}
       </section>
       <section className="rounded-2xl border border-line bg-white p-4">
         <h2 className="mb-3 font-semibold">Peak demand by hour</h2>
+        {!data.peakHours?.length ? (
+          <EmptyState title="No demand samples" body="Hourly demand is derived from historical_demand." />
+        ) : (
         <div className="h-56">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={data.peakHours}>
@@ -54,8 +65,13 @@ export default function AdminAnalytics() {
             </BarChart>
           </ResponsiveContainer>
         </div>
+        )}
       </section>
-      <p className="text-sm text-slate-600">Predicted vs actual ETA uses blended remaining-distance / speed with historical segment times. Average predicted ETA today: {data.etaAccuracy?.avg_predicted ?? 'n/a'} min.</p>
+      <p className="text-sm text-slate-600">
+        ETA is remaining-distance / speed blended with historical segment times, not a trained ML model.
+        Average stored prediction today: {data.etaAccuracy?.avg_predicted ?? 'n/a'} min
+        {data.etaAccuracy?.samples ? ` (${data.etaAccuracy.samples} samples)` : ''}.
+      </p>
     </div>
   );
 }

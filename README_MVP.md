@@ -1,12 +1,11 @@
 # 🚌 Smart Campus Bus System - Core Operational MVP
 
-> A **fully functional, demo-ready** campus transportation platform with real-time tracking, hybrid ETA calculation, occupancy management, and emergency alerts.
+> A **demo-ready MVP** campus transportation platform with real-time tracking, blended ETA estimation, occupancy management, and emergency alerts.
 
-**Status**: ✅ **COMPLETE - Core Operational MVP**
+**Status**: Core Operational MVP (verified locally)
 
-**Date**: September 12, 2025  
-**Type**: Production-ready codebase (MVP scope)  
-**Deployment**: Ready for demo, pilot, or production deployment  
+**Type**: MVP codebase — not production-hardened  
+**Deployment**: Ready for local demo/pilot after configuring your own environment variables
 
 ---
 
@@ -79,7 +78,7 @@ cat > backend/.env << 'EOF'
 DATABASE_URL=postgres://user:password@localhost:5432/campus_bus
 JWT_SECRET=dev-secret-change-in-production
 NODE_ENV=development
-PORT=5000
+PORT=3001
 EOF
 
 # 4. Create database and seed
@@ -88,7 +87,7 @@ cd backend && npm run seed
 
 # 5. Start both servers
 # Terminal 1: Backend
-cd backend && npm run dev  # http://localhost:5000
+cd backend && npm run dev  # http://localhost:3001
 
 # Terminal 2: Frontend
 cd frontend && npm run dev  # http://localhost:5173
@@ -360,7 +359,7 @@ See [SETUP_GUIDE.md](./SETUP_GUIDE.md) for step-by-step demo scenarios.
 - **BUS-01**: Route A, Driver Ravi Kumar (18/40 passengers)
 - **BUS-03**: Route B, Driver Meera Iyer (24/36 passengers)
 
-Both update location every 10 seconds.
+Both are advanced by the demo simulator every 2.5 seconds while no real device GPS is reporting for that trip.
 
 ---
 
@@ -368,31 +367,31 @@ Both update location every 10 seconds.
 
 ### What This MVP Includes
 
-✅ Real-time bus tracking  
-✅ Hybrid ETA with fallback modes  
-✅ Occupancy management with validation  
-✅ Emergency alert system  
-✅ Admin monitoring dashboard  
-✅ Service announcements  
-✅ Historical data foundation  
-✅ Production-quality code  
-✅ Responsive mobile UI  
+- Real-time bus tracking (Socket.IO)
+- Blended ETA with explicit fallback modes
+- Occupancy management with validation
+- Emergency alert system
+- Admin monitoring dashboard
+- Service announcements
+- Historical data foundation
+- Responsive mobile UI
 
 ### What This MVP Does NOT Include
 
-❌ Real machine learning models (data-driven but statistical)  
-❌ Mobile app (web app is responsive)  
-❌ Payment/ticketing system  
-❌ Multi-campus support (can be added)  
-❌ Advanced analytics (can be added)  
+- Real machine learning models (demand uses historical averages)
+- Mobile app (web app is responsive)
+- Payment/ticketing system
+- Multi-campus support
+- Advanced analytics
+- Real hardware GPS integration (a provider abstraction is in place)
 
 ### GPS & Simulation
 
-- **Real GPS**: Requires browser geolocation permission
-- **Simulation**: Deterministic path interpolation, clearly marked "SIMULATED"
-- **No deception**: Never shows simulation as real GPS
-- **For demo**: Use simulation mode for consistent testing
-- **For production**: Implement real GPS with fallback
+- **Device GPS**: Requires browser geolocation permission; the frontend converts the browser's m/s speed to km/h.
+- **Simulation**: Deterministic path interpolation, returned by the API as mode `SIMULATED` and never presented as real GPS.
+- **Safety**: The demo simulator skips any trip that is reporting device coordinates, so real GPS is never overwritten.
+- **For demo**: Use simulation mode for consistent testing.
+- **For production**: Connect hardware via the location source registry (`backend/src/services/locationSources.js`).
 
 ---
 
@@ -436,7 +435,7 @@ dropdb campus_bus && createdb campus_bus && npm run seed
 ```
 
 ### "Socket.io not connecting"
-- Check backend running on port 5000
+- Check backend running on port 3001
 - Check browser console for errors
 - Clear cache: Ctrl+Shift+Delete
 - Restart backend
@@ -444,7 +443,7 @@ dropdb campus_bus && createdb campus_bus && npm run seed
 ### "Port already in use"
 ```bash
 # Kill process
-lsof -ti:5000 | xargs kill -9
+lsof -ti:3001 | xargs kill -9
 lsof -ti:5173 | xargs kill -9
 ```
 
@@ -496,20 +495,19 @@ Smart Campus Bus MVP - Educational project
 
 | Aspect | Status |
 |--------|--------|
-| Core functionality | ✅ Complete |
-| Database | ✅ Seeded & tested |
-| Backend APIs | ✅ All working |
-| Frontend UI | ✅ Responsive, mobile-friendly |
-| Real-time (Socket.io) | ✅ Tested |
-| Authentication | ✅ JWT + role-based |
-| Documentation | ✅ Comprehensive |
-| Demo data | ✅ Realistic 3 routes, 4 buses, 5 users |
-| Production ready | ✅ Yes (with deployment checklist) |
+| Core functionality | Verified locally |
+| Database | Seeded (deterministic, re-runnable) and verified |
+| Backend APIs | Verified with live requests |
+| Frontend UI | Responsive; production build succeeds |
+| Real-time (Socket.IO) | Verified (authenticated connection) |
+| Authentication | JWT + bcrypt, role-based authorization |
+| Demo data | 3 routes, 4 buses, demo accounts for all roles |
+| Production ready | No — MVP only; complete the production checklist first |
 
 ---
 
-**Status**: ✅ **COMPLETE**  
-**Ready for**: Demo → Pilot → Production  
-**Last Updated**: September 12, 2025  
+**Status**: Core Operational MVP  
+**Ready for**: Local demo / pilot  
+**Last Updated**: see git history
 
-Start with [SETUP_GUIDE.md](./SETUP_GUIDE.md) for detailed instructions!
+See `SETUP_GUIDE.md` for setup and `backend/.env.example` for required variables.

@@ -142,7 +142,7 @@ CREATE TABLE historical_segment_times (
 CREATE TABLE notifications (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-  type VARCHAR(32) NOT NULL CHECK (type IN ('arrival', 'delay', 'cancellation', 'announcement')),
+  type VARCHAR(32) NOT NULL CHECK (type IN ('arrival', 'delay', 'cancellation', 'announcement', 'emergency')),
   title VARCHAR(160) NOT NULL,
   body TEXT NOT NULL,
   related_bus_id UUID REFERENCES buses(id) ON DELETE SET NULL,

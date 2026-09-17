@@ -10,7 +10,7 @@ This is a **Core Operational MVP** for a smart campus bus system. It digitally r
 - **Emergency alert system** for drivers
 - **Pickup-point focused student experience**
 - **Admin operational monitoring** dashboard
-- **Historical data foundation** for future ML
+- **Historical data foundation** for later analytics or ML work
 
 **This system works immediately after setup with realistic demo data.**
 
@@ -40,7 +40,7 @@ cat > backend/.env << 'EOF'
 DATABASE_URL=postgres://user:password@localhost:5432/campus_bus
 JWT_SECRET=your-secure-random-secret-key
 NODE_ENV=development
-PORT=5000
+PORT=3001
 EOF
 
 # 4. Create database (adjust credentials as needed)
@@ -52,7 +52,7 @@ npm run seed
 
 # 6. Start backend server (Terminal 1)
 npm run dev
-# Server runs on http://localhost:5000
+# Server runs on http://localhost:3001
 
 # 7. Start frontend server (Terminal 2, from frontend/)
 npm run dev
@@ -417,7 +417,7 @@ GET    /api/demand/route/:routeId  - Route demand prediction
 - **BUS-01**: Route A, Driver Ravi Kumar, Status: active, Occupancy: 18/40
 - **BUS-03**: Route B, Driver Meera Iyer, Status: active, Occupancy: 24/36
 
-Both update location every 10 seconds (controllable by driver).
+The demo simulator advances trips that are not reporting device GPS every 2.5 seconds. Drivers can also push simulated or live coordinates manually.
 
 ---
 
@@ -425,11 +425,11 @@ Both update location every 10 seconds (controllable by driver).
 
 ### GPS Simulation
 
-- Real GPS requires browser permission (geolocation API)
-- If GPS denied, system gracefully falls back to simulation
-- **Simulation is clearly marked in UI** — never falsely shows as real GPS
-- Demo purposes: Use simulation for consistent testing
-- Production: Implement real GPS + optional fallback
+- Device GPS requires browser geolocation permission
+- If GPS is denied, that update falls back to simulation
+- Simulation is returned as mode `SIMULATED` and is never presented as hardware GPS
+- Demo: use simulation for consistent testing
+- Production: feed hardware coordinates through the location source registry without rewriting the app
 
 ### Database Migrations
 
@@ -448,14 +448,13 @@ Both update location every 10 seconds (controllable by driver).
 
 ### Production Considerations
 
-- Use environment variables for all secrets
-- Implement rate limiting (already set up)
-- Add HTTPS and CORS properly
-- Use real GPS with fallback to scheduled mode
-- Implement data retention policies
-- Add proper logging and monitoring
-- Regular database backups
-- SSL certificates
+This is an MVP, not a production-hardened deployment. Before any public launch:
+
+- Set `DATABASE_URL`, `JWT_SECRET`, `NODE_ENV=production`, and `PORT` (Render injects `PORT`)
+- Set `CORS_ORIGINS` to your real frontend origin
+- Set `VITE_API_URL` at frontend build time to the public API URL
+- Use HTTPS, database backups, and monitoring
+- Do not treat simulated GPS as production GPS hardware
 
 ---
 
@@ -524,15 +523,15 @@ echo $DATABASE_URL
 dropdb campus_bus && createdb campus_bus && npm run seed
 ```
 
-### "Port 5000/5173 already in use"
+### "Port 3001/5173 already in use"
 ```bash
 # Kill the process
-lsof -ti:5000 | xargs kill -9
+lsof -ti:3001 | xargs kill -9
 lsof -ti:5173 | xargs kill -9
 ```
 
 ### "Socket.io not connecting"
-- Check backend is running on port 5000
+- Check backend is running on port 3001
 - Check browser console for errors
 - Clear browser cache and reload
 - Check CORS configuration in server.js

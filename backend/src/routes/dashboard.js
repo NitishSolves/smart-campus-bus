@@ -19,14 +19,15 @@ router.get('/', authenticate, async (req, res) => {
     const withStudentEta = buses.map((bus) => {
       if (!targetStop) return bus;
       const serves = (bus.stops || []).some((s) => s.id === targetStop.id);
-      if (!serves) return { ...bus, etaMinutes: bus.etaMinutes + 1000, studentStop: false };
+      if (!serves) return { ...bus, studentStop: false };
+      const point = bus.lat != null && bus.lng != null ? { lat: bus.lat, lng: bus.lng } : null;
       const eta = computeStopEta({
-        point: { lat: bus.lat, lng: bus.lng },
+        point,
         path: bus.path || [],
         stop: { lat: Number(targetStop.lat), lng: Number(targetStop.lng) },
-        speedKmh: bus.speedKmh || 12,
+        speedKmh: bus.speedKmh,
         delayMinutes: bus.delayMinutes || 0,
-        lastLocationTime: bus.lastLocationTime,
+        lastLocationTime: bus.lastUpdate,
         tripStatus: bus.status,
       });
       return {
@@ -41,11 +42,15 @@ router.get('/', authenticate, async (req, res) => {
     const favoriteRouteIds = new Set(
       (await query("SELECT target_id FROM favorites WHERE user_id = $1 AND target_type = 'route'", [req.user.id])).rows.map((r) => r.target_id)
     );
+    const etaValue = (bus) => (Number.isFinite(bus.etaMinutes) ? bus.etaMinutes : Number.POSITIVE_INFINITY);
     const sorted = [...withStudentEta].sort((a, b) => {
       const af = favoriteRouteIds.has(a.routeId) ? 0 : 1;
       const bf = favoriteRouteIds.has(b.routeId) ? 0 : 1;
       if (af !== bf) return af - bf;
-      return a.etaMinutes - b.etaMinutes;
+      const as = a.studentStop === false ? 1 : 0;
+      const bs = b.studentStop === false ? 1 : 0;
+      if (as !== bs) return as - bs;
+      return etaValue(a) - etaValue(b);
     });
     const nextBus = sorted.find((b) => b.studentStop !== false) || sorted[0] || null;
     const announcements = await query(

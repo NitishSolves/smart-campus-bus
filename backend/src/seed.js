@@ -1,9 +1,30 @@
 const fs = require('fs');
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '../.env') });
+const { validateEnv } = require('./config');
+const { problems } = validateEnv();
+if (problems.length) {
+  console.error('[seed] Cannot seed, configuration is invalid:');
+  problems.forEach((problem) => console.error(`  - ${problem}`));
+  process.exit(1);
+}
 const bcrypt = require('bcryptjs');
 const { pool, query } = require('./db');
 const { interpolatePath } = require('./utils/geo');
+
+const SEED = 20250912;
+
+// Deterministic PRNG so demand samples are identical on every seed run.
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function next() {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
 
 const STOPS = [
   { name: 'Main Gate', lat: 12.9700, lng: 77.5900, description: 'Campus entrance and security checkpoint' },
@@ -23,14 +44,14 @@ function lerp(a, b, t) {
 }
 
 function densify(points, steps = 6) {
-  const path = [];
+  const densePath = [];
   for (let i = 0; i < points.length - 1; i += 1) {
     for (let s = 0; s < steps; s += 1) {
-      path.push(lerp(points[i], points[i + 1], s / steps));
+      densePath.push(lerp(points[i], points[i + 1], s / steps));
     }
   }
-  path.push(points[points.length - 1]);
-  return path;
+  densePath.push(points[points.length - 1]);
+  return densePath;
 }
 
 async function seed() {
@@ -162,14 +183,19 @@ async function seed() {
     driverIds[d.email] = dr.rows[0].id;
   }
 
+  // Deterministic demand history + segment times. Delete route history first so
+  // re-running the seed does not accumulate duplicate samples.
+  const rng = mulberry32(SEED);
   for (const [code, routeId] of Object.entries(routeIds)) {
     const spec = routesSpec.find((r) => r.code === code);
+    await query('DELETE FROM historical_demand WHERE route_id = $1', [routeId]);
+    await query('DELETE FROM historical_segment_times WHERE route_id = $1', [routeId]);
     for (let day = 0; day < 7; day += 1) {
       for (let hour = 7; hour <= 20; hour += 1) {
         const peak = (hour >= 8 && hour <= 10) || (hour >= 16 && hour <= 18);
         const weekend = day === 0 || day === 6;
         const base = code === 'A' ? 22 : code === 'B' ? 26 : 16;
-        const count = Math.max(4, Math.round((base + (peak ? 14 : 0) - (weekend ? 8 : 0)) * (0.85 + Math.random() * 0.3)));
+        const count = Math.max(4, Math.round((base + (peak ? 14 : 0) - (weekend ? 8 : 0)) * (0.85 + rng() * 0.3)));
         await query(
           `INSERT INTO historical_demand (route_id, hour_of_day, day_of_week, passenger_count, recorded_on)
            VALUES ($1, $2, $3, $4, CURRENT_DATE - ($5 || ' days')::interval)`,
@@ -186,54 +212,61 @@ async function seed() {
     }
   }
 
-  const tripA = await query(
-    `INSERT INTO trips (bus_id, driver_id, route_id, status, occupancy, started_at, progress, current_stop_index)
-     VALUES ($1, $2, $3, 'active', 18, NOW() - INTERVAL '2 minutes', 0.02, 0)
-     RETURNING id`,
-    [busIds['BUS-01'], driverIds['driver@campus.edu'], routeIds.A]
-  );
-  const tripB = await query(
-    `INSERT INTO trips (bus_id, driver_id, route_id, status, occupancy, started_at, progress, current_stop_index)
-     VALUES ($1, $2, $3, 'active', 24, NOW() - INTERVAL '6 minutes', 0.22, 0)
-     RETURNING id`,
-    [busIds['BUS-03'], driverIds['driver2@campus.edu'], routeIds.B]
-  );
-
-  const pointA = interpolatePath(routeAPath, 0.08);
-  const pointB = interpolatePath(routeBPath, 0.22);
-  await query(
-    `INSERT INTO bus_locations (trip_id, bus_id, lat, lng, speed_kmh, heading)
-     VALUES ($1, $2, $3, $4, 20, $5)`,
-    [tripA.rows[0].id, busIds['BUS-01'], pointA.lat, pointA.lng, pointA.heading]
-  );
-  await query(
-    `INSERT INTO bus_locations (trip_id, bus_id, lat, lng, speed_kmh, heading)
-     VALUES ($1, $2, $3, $4, 18, $5)`,
-    [tripB.rows[0].id, busIds['BUS-03'], pointB.lat, pointB.lng, pointB.heading]
-  );
-
-  await query(`UPDATE drivers SET status = 'on_trip' WHERE id = ANY($1)`, [
-    [driverIds['driver@campus.edu'], driverIds['driver2@campus.edu']],
-  ]);
+  // Active demo trips: only create when the driver has none in progress.
+  const activeTripSpecs = [
+    { email: 'driver@campus.edu', bus: 'BUS-01', route: 'A', occupancy: 18, progress: 0.02, ageMinutes: 2, path: routeAPath },
+    { email: 'driver2@campus.edu', bus: 'BUS-03', route: 'B', occupancy: 24, progress: 0.22, ageMinutes: 6, path: routeBPath },
+  ];
+  const activeDriverIds = [];
+  for (const spec of activeTripSpecs) {
+    const existing = await query(
+      `SELECT id FROM trips WHERE driver_id = $1 AND status IN ('active', 'delayed') LIMIT 1`,
+      [driverIds[spec.email]]
+    );
+    if (existing.rows[0]) {
+      activeDriverIds.push(driverIds[spec.email]);
+      continue;
+    }
+    const trip = await query(
+      `INSERT INTO trips (bus_id, driver_id, route_id, status, occupancy, started_at, progress, current_stop_index)
+       VALUES ($1, $2, $3, 'active', $4, NOW() - ($5 || ' minutes')::interval, $6, 0)
+       RETURNING id`,
+      [busIds[spec.bus], driverIds[spec.email], routeIds[spec.route], spec.occupancy, String(spec.ageMinutes), spec.progress]
+    );
+    const point = interpolatePath(spec.path, spec.progress);
+    await query(
+      `INSERT INTO bus_locations (trip_id, bus_id, lat, lng, speed_kmh, heading)
+       VALUES ($1, $2, $3, $4, 20, $5)`,
+      [trip.rows[0].id, busIds[spec.bus], point.lat, point.lng, point.heading]
+    );
+    activeDriverIds.push(driverIds[spec.email]);
+  }
+  await query(`UPDATE drivers SET status = 'on_trip' WHERE id = ANY($1)`, [activeDriverIds]);
 
   await query(
     `INSERT INTO announcements (title, body, severity, created_by, is_active)
-     VALUES ($1, $2, 'info', $3, TRUE), ($4, $5, 'warning', $3, TRUE)`,
-    [
-      'Evening shuttle extra trip',
-      'Route A will run an extra Hostel trip at 9:15 PM during midterms.',
-      admin.rows[0].id,
-      'Library stop boarding delay',
-      'Expect 3 extra minutes at Library during 5–6 PM due to event crowd.',
-    ]
+     SELECT $1::varchar, $2::text, 'info', $3::uuid, TRUE
+     WHERE NOT EXISTS (SELECT 1 FROM announcements WHERE title = $1::varchar)`,
+    ['Evening shuttle extra trip', 'Route A will run an extra Hostel trip at 9:15 PM during midterms.', admin.rows[0].id]
+  );
+  await query(
+    `INSERT INTO announcements (title, body, severity, created_by, is_active)
+     SELECT $1::varchar, $2::text, 'warning', $3::uuid, TRUE
+     WHERE NOT EXISTS (SELECT 1 FROM announcements WHERE title = $1::varchar)`,
+    ['Library stop boarding delay', 'Expect 3 extra minutes at Library during 5-6 PM due to event crowd.', admin.rows[0].id]
   );
 
   await query(
     `INSERT INTO notifications (user_id, type, title, body, related_route_id)
-     VALUES
-     ($1, 'arrival', 'BUS-01 approaching Library', 'Route A is about 6 minutes from Library.', $2),
-     ($1, 'announcement', 'Evening shuttle extra trip', 'Route A extra Hostel trip at 9:15 PM.', $2)`,
-    [student.rows[0].id, routeIds.A]
+     SELECT $1::uuid, 'arrival', $2::varchar, $3::text, $4::uuid
+     WHERE NOT EXISTS (SELECT 1 FROM notifications WHERE user_id = $1::uuid AND title = $2::varchar)`,
+    [student.rows[0].id, 'BUS-01 approaching Library', 'Route A is about 6 minutes from Library.', routeIds.A]
+  );
+  await query(
+    `INSERT INTO notifications (user_id, type, title, body, related_route_id)
+     SELECT $1::uuid, 'announcement', $2::varchar, $3::text, $4::uuid
+     WHERE NOT EXISTS (SELECT 1 FROM notifications WHERE user_id = $1::uuid AND title = $2::varchar)`,
+    [student.rows[0].id, 'Evening shuttle extra trip', 'Route A extra Hostel trip at 9:15 PM.', routeIds.A]
   );
 
   await query(
@@ -243,19 +276,24 @@ async function seed() {
     [student.rows[0].id, routeIds.A, s('Library').id, busIds['BUS-01']]
   );
 
-  const completed = await query(
-    `INSERT INTO trips (bus_id, driver_id, route_id, status, occupancy, started_at, ended_at, progress, current_stop_index)
-     VALUES ($1, $2, $3, 'completed', 22, NOW() - INTERVAL '2 hours', NOW() - INTERVAL '105 minutes', 1, 3)
-     RETURNING id`,
-    [busIds['BUS-02'], driverIds['driver3@campus.edu'], routeIds.C]
+  // Completed demo trip (+ resolved emergency) created only once.
+  const completedExisting = await query(
+    `SELECT id FROM trips WHERE driver_id = $1 AND status = 'completed' LIMIT 1`,
+    [driverIds['driver3@campus.edu']]
   );
-
-  // Seed historical emergency for demo
-  await query(
-    `INSERT INTO emergency_alerts (trip_id, bus_id, driver_id, lat, lng, message, status, acknowledged_at, acknowledged_by, created_at)
-     VALUES ($1, $2, $3, $4, $5, $6, 'resolved', NOW() - INTERVAL '30 minutes', $7, NOW() - INTERVAL '45 minutes')`,
-    [completed.rows[0].id, busIds['BUS-02'], driverIds['driver3@campus.edu'], 12.9822, 77.5826, 'Mechanical issue - resolved', admin.rows[0].id]
-  );
+  if (!completedExisting.rows[0]) {
+    const completed = await query(
+      `INSERT INTO trips (bus_id, driver_id, route_id, status, occupancy, started_at, ended_at, progress, current_stop_index)
+       VALUES ($1, $2, $3, 'completed', 22, NOW() - INTERVAL '2 hours', NOW() - INTERVAL '105 minutes', 1, 3)
+       RETURNING id`,
+      [busIds['BUS-02'], driverIds['driver3@campus.edu'], routeIds.C]
+    );
+    await query(
+      `INSERT INTO emergency_alerts (trip_id, bus_id, driver_id, lat, lng, message, status, acknowledged_at, acknowledged_by, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, 'resolved', NOW() - INTERVAL '30 minutes', $7, NOW() - INTERVAL '45 minutes')`,
+      [completed.rows[0].id, busIds['BUS-02'], driverIds['driver3@campus.edu'], 12.9822, 77.5826, 'Mechanical issue - resolved', admin.rows[0].id]
+    );
+  }
 
   console.log('Seed complete');
   console.log('Students: student@campus.edu / student123');
@@ -272,7 +310,7 @@ if (require.main === module) {
     await seed();
     await pool.end();
   }).catch((err) => {
-    console.error(err);
+    console.error('[seed] failed:', err.message);
     process.exit(1);
   });
 }

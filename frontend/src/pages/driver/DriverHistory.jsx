@@ -1,14 +1,19 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../api';
-import { StatusBadge, Skeleton, EmptyState } from '../../components/ui.jsx';
+import { StatusBadge, Skeleton, EmptyState, ErrorState } from '../../components/ui.jsx';
 
 export default function DriverHistory() {
   const [trips, setTrips] = useState([]);
+  const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   useEffect(() => {
-    api('/api/driver/history').then((d) => setTrips(d.trips)).finally(() => setLoading(false));
+    api('/api/driver/history')
+      .then((d) => setTrips(d.trips))
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
   }, []);
   if (loading) return <Skeleton className="h-40 w-full" />;
+  if (error) return <ErrorState message={error} />;
   if (!trips.length) return <EmptyState title="No trips yet" body="Completed trips will be stored here." />;
   return (
     <div className="mx-auto max-w-md space-y-3">

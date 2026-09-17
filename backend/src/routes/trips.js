@@ -55,7 +55,7 @@ router.get('/:id', authenticate, async (req, res) => {
   }
 });
 
-router.post('/', authenticate, requireRole('admin', 'driver'), async (req, res) => {
+router.post('/', authenticate, requireRole('admin'), async (req, res) => {
   try {
     const { busId, driverId, routeId } = req.body || {};
     if (!busId || !driverId || !routeId) {
@@ -76,6 +76,14 @@ router.post('/', authenticate, requireRole('admin', 'driver'), async (req, res) 
 router.put('/:id', authenticate, requireRole('admin', 'driver'), async (req, res) => {
   try {
     const { status, delayMinutes, delayReason, occupancy } = req.body || {};
+    if (req.user.role === 'driver') {
+      const owned = await query(
+        `SELECT t.id FROM trips t JOIN drivers d ON d.id = t.driver_id
+         WHERE t.id = $1 AND d.user_id = $2`,
+        [req.params.id, req.user.id]
+      );
+      if (!owned.rows[0]) return res.status(403).json({ error: 'Not your trip' });
+    }
     const { rows } = await query(
       `UPDATE trips
        SET status = COALESCE($1, status),
@@ -129,6 +137,7 @@ async function startTripForDriver(driverUserId, extras = {}) {
     progress: 0,
     currentStopIndex: 0,
     occupancy: extras.occupancy || 8,
+    source: 'simulation',
   });
   return rows[0];
 }

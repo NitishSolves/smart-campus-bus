@@ -2,9 +2,13 @@ const jwt = require('jsonwebtoken');
 const { query } = require('../db');
 
 function signToken(user) {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    throw new Error('JWT_SECRET is not configured');
+  }
   return jwt.sign(
     { id: user.id, role: user.role, email: user.email },
-    process.env.JWT_SECRET,
+    secret,
     { expiresIn: '7d' }
   );
 }

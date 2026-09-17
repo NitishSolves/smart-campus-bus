@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import RouteCard from '../components/RouteCard.jsx';
-import { ErrorState, Skeleton } from '../components/ui.jsx';
+import { EmptyState, ErrorState, Skeleton } from '../components/ui.jsx';
 
 export default function RoutesPage() {
   const [routes, setRoutes] = useState([]);
@@ -19,6 +19,7 @@ export default function RoutesPage() {
 
   if (loading) return <Skeleton className="h-40 w-full" />;
   if (error) return <ErrorState message={error} />;
+  if (!routes.length) return <EmptyState title="No routes" body="Campus routes will appear here once an administrator adds them." />;
 
   return (
     <div>

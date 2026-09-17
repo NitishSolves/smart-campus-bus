@@ -1,6 +1,6 @@
-# 🚌 Smart Campus Bus ETA & Demand Prediction System
+# Smart Campus Bus ETA & Demand System
 
-> An intelligent campus transportation system that predicts **bus arrival time (ETA)** and **passenger demand** using location data, historical trip data, and machine learning.
+> A campus transportation system that estimates **bus arrival time (ETA)** and **passenger demand** using live location, distance/speed estimation and historical trip data.
 
 ## 📌 Overview
 
@@ -189,24 +189,31 @@ Current Location
       +
 Destination Stop
       +
-Distance
+Remaining Distance Along Route
       +
-Historical Travel Time
+Current Speed
       +
-Time / Day
+Historical Segment Travel Time
+      +
+Reported Delay
       ↓
-   ML Model
+  ETA Calculation
       ↓
-Predicted ETA
+Estimated ETA
 ```
 
-### Step 3 — Predict ETA
+### Step 3 — Estimate ETA
 
-The ETA model estimates remaining travel time between the bus's current location and a selected stop.
+The ETA calculation estimates remaining travel time between the bus's current location and a selected stop. It blends:
 
-### Step 4 — Predict Demand
+1. remaining distance along the route divided by the current (or default) speed, and
+2. historical segment travel time for that leg,
 
-Historical passenger patterns can estimate expected demand for a route and time period.
+plus any driver-reported delay. It is **not** a trained machine-learning model; it is a transparent distance/speed and historical-average estimator. When location data is missing or stale, the API returns a degraded or unavailable ETA instead of guessing.
+
+### Step 4 — Estimate Demand
+
+Historical passenger counts are averaged by route, hour and weekday to produce a low / medium / high demand level. This is a statistical average, not an ML model. If no samples exist, a schedule-based heuristic is used.
 
 ### Step 5 — Serve Role-Specific Interfaces
 
@@ -214,44 +221,35 @@ The backend returns only the data/actions required for each role. Students track
 
 ---
 
-## 🧠 Machine Learning Approach
+## ETA & Demand Method (no ML)
 
-### ETA Prediction
+This MVP does **not** ship a trained machine-learning model. It uses transparent, data-driven estimation so results are explainable and reproducible.
 
-Possible features:
+### ETA estimation (current implementation)
 
-- Distance to stop
-- Time
-- Day of week
-- Route
-- Historical travel time
-- Available delay/traffic information
-- Bus speed
+Inputs:
 
-**Target:** estimated remaining travel time.
+- Remaining distance to the stop along the route polyline
+- Current speed reported with the latest location (falls back to a default speed)
+- Historical average travel time for the leg (`historical_segment_times`)
+- Driver-reported delay minutes
 
-Possible models:
+Blend used: `0.65 x (distance / speed) + 0.35 x historical_average + delay`
 
-- Linear Regression
-- Random Forest
-- Gradient Boosting
-- XGBoost
+Result modes returned by the API:
 
-For an MVP, **Random Forest or Gradient Boosting** is a practical starting point.
+| Mode | Meaning |
+|---|---|
+| `LIVE` | Fresh location with a valid speed |
+| `DEGRADED` | Location is older than 5 minutes; default speed used |
+| `ROUTE_FALLBACK` | The stop is not near the stored route path |
+| `SCHEDULED` | Trip has not started / no speed yet |
+| `ARRIVED` | Bus is essentially at the stop |
+| `UNAVAILABLE` | No valid location to calculate from |
 
-### Demand Prediction
+### Demand estimation (current implementation)
 
-Possible features:
-
-- Route
-- Time of day
-- Day of week
-- Historical passenger count
-- Academic schedule
-- Special events
-- Previous demand
-
-**Target:** expected passenger count or demand level.
+Historic passenger counts are averaged for the requested route + hour + weekday and mapped to a `low` / `medium` / `high` level. When no history exists, a schedule heuristic is used. Treat this as a baseline, not a forecast model.
 
 ---
 
@@ -269,12 +267,9 @@ Possible features:
 - Node.js
 - Express.js
 
-### Machine Learning
+### Offline Data Tooling (optional)
 
-- Python
-- Pandas
-- NumPy
-- Scikit-learn
+- Python (standard library only) — `ml/train.py` builds a simple demand histogram from a CSV. It is **not** an ML model and is not required to run the app.
 
 ### Database
 
@@ -285,6 +280,13 @@ Possible features:
 - GPS/location data
 - Route and stop data
 - Historical transportation data
+
+### Dev / Real-time
+
+- Vite + React + Tailwind (frontend)
+- Socket.IO (live tracking broadcast)
+- JWT + bcrypt (auth)
+- Leaflet + react-leaflet (maps)
 
 ### Development Tools
 
@@ -299,32 +301,35 @@ Possible features:
 ```text
 smart-campus-bus/
 │
-├── frontend/
-│   ├── student/              # Student-facing bus tracking UI
-│   ├── driver/               # Clutter-free driver UI
-│   └── admin/                # Admin monitoring/management UI
+├── frontend/                 # Single React SPA with role-based routes
+│   └── src/
+│       ├── pages/            # Student pages + driver/ and admin/ folders
+│       ├── components/       # Shared UI, map, cards
+│       ├── context/          # AuthContext (JWT session)
+│       ├── hooks/            # useSocket (Socket.IO)
+│       └── api.js            # API base URL + fetch helper
 │
 ├── backend/
-│   ├── routes/
-│   ├── controllers/
-│   ├── models/
-│   └── server.js
+│   └── src/
+│       ├── server.js         # Express app + Socket.IO + env validation
+│       ├── config.js         # Environment validation
+│       ├── db.js             # PostgreSQL pool
+│       ├── seed.js           # Deterministic, idempotent seed
+│       ├── routes/           # auth, driver, admin, tracking, eta, demand...
+│       ├── services/         # tracking, location source registry
+│       └── utils/            # eta, geo, demand helpers
 │
 ├── ml/
-│   ├── datasets/
-│   ├── notebooks/
-│   ├── models/
-│   ├── preprocessing/
-│   └── train.py
+│   └── train.py              # Optional offline demand histogram tool
 │
 ├── database/
-│   └── schema.sql
+│   └── schema.sql            # PostgreSQL schema, constraints, indexes
 │
 ├── docs/
 │   └── architecture.md
 │
-├── .gitignore
-└── README.md
+├── README.md
+└── backend/.env.example      # Copy to backend/.env (never commit .env)
 ```
 
 ---
@@ -393,27 +398,29 @@ Driver → Emergency Alert → Backend → Admin Dashboard
 
 The first version should focus on a small but functional implementation.
 
-### Core MVP
+### Core MVP — implemented and verified
 
-- [ ] Basic campus routes
-- [ ] Bus and stop information
-- [ ] Location tracking/simulation
-- [ ] ETA prediction
-- [ ] Basic demand prediction
-- [ ] Student dashboard
-- [ ] **Driver login and role-based dashboard**
-- [ ] **Driver trip start/end controls**
-- [ ] **Driver location update**
-- [ ] **Driver delay/issue reporting**
-- [ ] **Driver emergency alert to admin**
-- [ ] Admin monitoring dashboard
-- [ ] Database integration
-- [ ] Role-based backend authorization
+- [x] Basic campus routes
+- [x] Bus and stop information
+- [x] Location tracking/simulation (clearly labelled; not real GPS)
+- [x] ETA estimation (distance/speed + historical blend)
+- [x] Basic demand estimation (historical average, not ML)
+- [x] Student dashboard
+- [x] **Driver login and role-based dashboard**
+- [x] **Driver trip start/end controls**
+- [x] **Driver location update (device GPS or simulation)**
+- [x] **Driver delay/issue reporting**
+- [x] **Driver emergency alert to admin**
+- [x] Admin monitoring dashboard
+- [x] Database integration (PostgreSQL schema + deterministic seed)
+- [x] Role-based backend authorization
+- [x] Live map tracking (Leaflet)
+- [x] Service announcements
+- [x] Favorites and notifications
 
-### Future Improvements
+### Future Improvements (not implemented)
 
-- [ ] Real GPS hardware integration
-- [ ] Live map tracking
+- [ ] Real GPS hardware integration (provider abstraction exists; no hardware yet)
 - [ ] Traffic-aware ETA
 - [ ] Mobile application/PWA for drivers
 - [ ] Push notifications
@@ -423,6 +430,7 @@ The first version should focus on a small but functional implementation.
 - [ ] Campus timetable integration
 - [ ] Historical analytics dashboard
 - [ ] Driver performance/shift management
+- [ ] Multi-institution support
 
 ---
 

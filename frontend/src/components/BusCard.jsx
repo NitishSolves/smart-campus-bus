@@ -20,7 +20,9 @@ export default function BusCard({ bus, onTrack }) {
       <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
         <div className="flex items-center gap-2 text-slate-700">
           <Clock size={16} aria-hidden="true" />
-          <span className="font-semibold text-ink">{Math.max(1, Math.round(bus.etaMinutes))} min away</span>
+          <span className="font-semibold text-ink">
+            {bus.etaMinutes != null ? `${Math.max(1, Math.round(bus.etaMinutes))} min away` : 'ETA unavailable'}
+          </span>
         </div>
         <div className="flex items-center gap-2 text-slate-700">
           <MapPin size={16} aria-hidden="true" />
