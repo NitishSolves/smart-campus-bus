@@ -20,11 +20,19 @@ export default function BottomNav() {
               <NavLink
                 to={item.to}
                 className={({ isActive }) =>
-                  `flex min-h-14 cursor-pointer flex-col items-center justify-center gap-1 text-xs font-medium ${isActive ? 'text-primary' : 'text-slate-500'}`
+                  `flex min-h-14 cursor-pointer flex-col items-center justify-center gap-1 text-[11px] font-medium ${
+                    isActive ? 'text-primary' : 'text-slate-500'
+                  }`
                 }
               >
-                <Icon size={20} aria-hidden="true" />
-                {item.label}
+                {({ isActive }) => (
+                  <>
+                    <span className={`rounded-xl px-3 py-1 ${isActive ? 'bg-blue-50' : ''}`}>
+                      <Icon size={20} aria-hidden="true" />
+                    </span>
+                    {item.label}
+                  </>
+                )}
               </NavLink>
             </li>
           );

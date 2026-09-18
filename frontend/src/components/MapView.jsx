@@ -4,7 +4,7 @@ import { useEffect, useRef } from 'react';
 
 const busIcon = L.divIcon({
   className: '',
-  html: `<div style="width:28px;height:28px;border-radius:999px;background:#2563EB;border:3px solid white;box-shadow:0 2px 8px rgba(15,23,42,.25);display:flex;align-items:center;justify-content:center;color:white;font-size:12px;font-weight:700;">B</div>`,
+  html: `<div style="width:32px;height:32px;border-radius:999px;background:#0B1F3A;border:3px solid white;box-shadow:0 4px 12px rgba(15,23,42,.28);display:flex;align-items:center;justify-content:center;color:white;font-size:12px;font-weight:700;">B</div>`,
   iconSize: [28, 28],
   iconAnchor: [14, 14],
 });

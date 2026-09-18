@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { Star } from 'lucide-react';
 import { api } from '../api';
 import MapView from '../components/MapView.jsx';
-import { OccupancyIndicator, StatusBadge, ErrorState, Skeleton } from '../components/ui.jsx';
+import { OccupancyIndicator, StatusBadge, ErrorState, Skeleton, PageHeader } from '../components/ui.jsx';
 
 function crowdLevel(occupancy, capacity) {
   const ratio = capacity > 0 ? occupancy / capacity : 0;
@@ -39,20 +39,21 @@ export default function RouteDetail() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-start justify-between">
-        <div>
-          <p className="text-sm text-slate-500">Route {route.code}</p>
-          <h1 className="text-2xl font-semibold">{route.name}</h1>
-        </div>
-        <button
-          type="button"
-          className="flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border border-line bg-white px-3 text-sm disabled:opacity-60"
-          onClick={saveFavorite}
-          disabled={saved}
-        >
-          <Star size={16} /> {saved ? 'Saved' : 'Save'}
-        </button>
-      </div>
+      <PageHeader
+        kicker={`Route ${route.code}`}
+        title={route.name}
+        subtitle={`${route.start_name} → ${route.end_name}`}
+        actions={(
+          <button
+            type="button"
+            className="btn-ghost disabled:opacity-60"
+            onClick={saveFavorite}
+            disabled={saved}
+          >
+            <Star size={16} aria-hidden="true" /> {saved ? 'Saved' : 'Save'}
+          </button>
+        )}
+      />
       {error && <p className="rounded-xl bg-red-50 p-3 text-sm text-red-700" role="alert">{error}</p>}
       <div className="flex flex-wrap gap-2">
         <StatusBadge status={route.status} />
@@ -63,22 +64,26 @@ export default function RouteDetail() {
         <MapView stops={route.stops} path={route.path || []} buses={[]} />
       </div>
       <ol className="space-y-2">
-        {route.stops.map((stop) => (
+        {route.stops.map((stop, idx) => (
           <li key={stop.id}>
-            <button type="button" onClick={() => navigate(`/stops/${stop.id}`)} className="flex min-h-12 w-full cursor-pointer items-center justify-between rounded-xl border border-line bg-white px-4 text-left">
-              <span>{stop.stop_order}. {stop.name}</span>
+            <button type="button" onClick={() => navigate(`/stops/${stop.id}`)} className="card flex min-h-12 w-full cursor-pointer items-center justify-between px-4 text-left">
+              <span className="flex items-center gap-3">
+                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-muted text-xs font-bold text-primary">{idx + 1}</span>
+                <span>{stop.stop_order}. {stop.name}</span>
+              </span>
               <span className="text-sm text-slate-500">View stop</span>
             </button>
           </li>
         ))}
       </ol>
       {route.activeTrips?.map((t) => (
-        <div key={t.id} className="rounded-2xl border border-line bg-white p-4">
+        <div key={t.id} className="card p-4">
           <div className="mb-2 flex items-center justify-between">
             <p className="font-semibold">{t.bus_number} is on this route</p>
-            <StatusBadge status={t.status} />
+            <StatusBadge status={t.status === 'active' ? 'on-time' : t.status} />
           </div>
           <OccupancyIndicator level={crowdLevel(t.occupancy, t.capacity)} occupancy={t.occupancy} capacity={t.capacity} />
+          <button type="button" onClick={() => navigate('/track')} className="btn-blue mt-4 w-full">Track Bus (Live)</button>
         </div>
       ))}
     </div>

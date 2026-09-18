@@ -1,10 +1,13 @@
-import { Bus, Clock, MapPin, ChevronRight } from 'lucide-react';
-import { OccupancyIndicator, StatusBadge } from './ui.jsx';
+import { Bus, ChevronRight, Clock, MapPin } from 'lucide-react';
+import { OccupancyIndicator, StatusBadge, FreshnessChip } from './ui.jsx';
+import { formatEta, freshness } from '../lib/format.js';
 
-export default function BusCard({ bus, onTrack }) {
+export default function BusCard({ bus, onTrack, connected }) {
   if (!bus) return null;
+  const eta = formatEta(bus.etaMinutes);
+  const live = freshness({ lastUpdate: bus.lastUpdate, calculationMode: bus.calculationMode, connected });
   return (
-    <article className="rounded-2xl border border-line bg-white p-4 shadow-card">
+    <article className="card p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-3">
           <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary text-white">
@@ -15,14 +18,15 @@ export default function BusCard({ bus, onTrack }) {
             <p className="text-sm text-slate-600">Route {bus.routeCode} · {bus.routeName}</p>
           </div>
         </div>
-        <StatusBadge status={bus.status === 'active' ? 'on-time' : bus.status} />
+        <div className="flex flex-col items-end gap-1">
+          <StatusBadge status={bus.status === 'active' ? 'on-time' : bus.status} />
+          <FreshnessChip freshness={live} />
+        </div>
       </div>
       <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
         <div className="flex items-center gap-2 text-slate-700">
           <Clock size={16} aria-hidden="true" />
-          <span className="font-semibold text-ink">
-            {bus.etaMinutes != null ? `${Math.max(1, Math.round(bus.etaMinutes))} min away` : 'ETA unavailable'}
-          </span>
+          <span className="font-semibold text-ink">{eta || 'ETA unavailable'}</span>
         </div>
         <div className="flex items-center gap-2 text-slate-700">
           <MapPin size={16} aria-hidden="true" />
@@ -36,7 +40,7 @@ export default function BusCard({ bus, onTrack }) {
         <button
           type="button"
           onClick={() => onTrack(bus)}
-          className="mt-4 flex min-h-12 w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-accent px-4 font-semibold text-white transition hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-ring"
+          className="btn-blue mt-4 min-h-12 w-full"
         >
           Track Bus
           <ChevronRight size={18} aria-hidden="true" />

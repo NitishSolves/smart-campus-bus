@@ -6,10 +6,10 @@ export default function RouteCard({ route, onOpen }) {
     <button
       type="button"
       onClick={() => onOpen?.(route)}
-      className="w-full cursor-pointer rounded-2xl border border-line bg-white p-4 text-left shadow-card transition hover:border-primary/40 focus:outline-none focus:ring-2 focus:ring-ring"
+      className="card w-full cursor-pointer p-4 text-left transition hover:border-primary/40 focus:outline-none focus:ring-2 focus:ring-primary/30"
     >
       <div className="flex items-center justify-between">
-        <span className="rounded-lg bg-primary px-2 py-1 text-xs font-bold text-white">Route {route.code}</span>
+        <span className="rounded-lg bg-navy px-2 py-1 text-xs font-bold text-white">Route {route.code}</span>
         <StatusBadge status={route.status} />
       </div>
       <h3 className="mt-3 font-semibold">{route.name}</h3>

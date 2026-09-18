@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../../api';
-import { EmptyState, ErrorState, Skeleton, StatusBadge } from '../../components/ui.jsx';
+import { EmptyState, ErrorState, PageHeader, Skeleton, StatusBadge } from '../../components/ui.jsx';
 
 function useAdminList(path, key) {
   const [items, setItems] = useState(null);
@@ -33,6 +33,25 @@ function FormError({ error }) {
   return <p className="rounded-xl bg-red-50 p-3 text-sm text-red-700" role="alert">{error}</p>;
 }
 
+function Table({ columns, rows }) {
+  return (
+    <div className="overflow-x-auto rounded-2xl border border-line bg-white">
+      <table className="min-w-full text-sm">
+        <thead className="bg-muted text-left text-slate-600">
+          <tr>
+            {columns.map((col) => (
+              <th key={col} className="px-4 py-3 font-semibold">{col}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export function AdminBuses() {
   const { items: buses, error, setError, load } = useAdminList('/api/buses', 'buses');
   const [form, setForm] = useState({ number: '', capacity: 40 });
@@ -40,9 +59,9 @@ export function AdminBuses() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-semibold">Buses</h1>
+      <PageHeader title="Buses" subtitle="Manage the college fleet." />
       <form
-        className="flex flex-wrap gap-2"
+        className="card flex flex-wrap gap-2 p-4"
         onSubmit={async (e) => {
           e.preventDefault();
           setBusy(true);
@@ -58,30 +77,26 @@ export function AdminBuses() {
           }
         }}
       >
-        <input className="min-h-11 rounded-xl border border-line px-3" placeholder="BUS-05" value={form.number} onChange={(e) => setForm({ ...form, number: e.target.value })} required />
-        <input className="min-h-11 w-24 rounded-xl border border-line px-3" type="number" min="1" value={form.capacity} onChange={(e) => setForm({ ...form, capacity: Number(e.target.value) })} />
-        <button className="min-h-11 cursor-pointer rounded-xl bg-primary px-4 font-semibold text-white disabled:opacity-60" type="submit" disabled={busy}>{busy ? 'Adding…' : 'Add bus'}</button>
+        <input className="field max-w-xs" placeholder="BUS-05" value={form.number} onChange={(e) => setForm({ ...form, number: e.target.value })} required />
+        <input className="field w-24" type="number" min="1" value={form.capacity} onChange={(e) => setForm({ ...form, capacity: Number(e.target.value) })} />
+        <button className="btn-blue" type="submit" disabled={busy}>{busy ? 'Adding…' : 'Add bus'}</button>
       </form>
       <FormError error={error} />
       <ListShell loading={!buses} error={error && !buses ? error : ''} onRetry={load}>
         {buses?.length === 0 ? (
           <EmptyState title="No buses" body="Add the first bus to get started." />
         ) : (
-          <div className="overflow-x-auto rounded-2xl border border-line bg-white">
-            <table className="min-w-full text-sm">
-              <thead className="bg-muted text-left"><tr><th className="p-3">Number</th><th>Capacity</th><th>Status</th><th>Driver</th></tr></thead>
-              <tbody>
-                {buses?.map((b) => (
-                  <tr key={b.id} className="border-t border-line">
-                    <td className="p-3 font-medium">{b.number}</td>
-                    <td>{b.capacity}</td>
-                    <td><StatusBadge status={b.status} /></td>
-                    <td>{b.driver_name || '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <Table
+            columns={['Number', 'Capacity', 'Status', 'Driver']}
+            rows={buses?.map((b) => (
+              <tr key={b.id} className="border-t border-line">
+                <td className="px-4 py-3 font-medium">{b.number}</td>
+                <td className="px-4 py-3">{b.capacity}</td>
+                <td className="px-4 py-3"><StatusBadge status={b.status} /></td>
+                <td className="px-4 py-3">{b.driver_name || '—'}</td>
+              </tr>
+            ))}
+          />
         )}
       </ListShell>
     </div>
@@ -92,17 +107,22 @@ export function AdminRoutes() {
   const { items: routes, error, load } = useAdminList('/api/routes', 'routes');
   return (
     <div className="space-y-3">
-      <h1 className="text-2xl font-semibold">Routes</h1>
+      <PageHeader title="Routes" subtitle="Manage bus routes and stops." />
       <ListShell loading={!routes} error={error && !routes ? error : ''} onRetry={load}>
         {routes?.length === 0 ? (
           <EmptyState title="No routes" body="Create routes to assign buses and stops." />
         ) : (
-          routes?.map((r) => (
-            <article key={r.id} className="rounded-2xl border border-line bg-white p-4">
-              <div className="flex justify-between"><p className="font-semibold">Route {r.code} · {r.name}</p><StatusBadge status={r.status} /></div>
-              <p className="text-sm text-slate-600">{r.start_name} to {r.end_name} · {r.stops?.length || 0} stops · {r.duration_minutes} min</p>
-            </article>
-          ))
+          <div className="grid gap-3">
+            {routes?.map((r) => (
+              <article key={r.id} className="card p-4">
+                <div className="flex justify-between gap-3">
+                  <p className="font-semibold">Route {r.code} · {r.name}</p>
+                  <StatusBadge status={r.status} />
+                </div>
+                <p className="mt-1 text-sm text-slate-600">{r.start_name} to {r.end_name} · {r.stops?.length || 0} stops · {r.duration_minutes} min</p>
+              </article>
+            ))}
+          </div>
         )}
       </ListShell>
     </div>
@@ -116,8 +136,8 @@ export function AdminStops() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-semibold">Stops</h1>
-      <form className="grid gap-2 md:grid-cols-4" onSubmit={async (e) => {
+      <PageHeader title="Stops" subtitle="Manage campus stops and locations." />
+      <form className="card grid gap-2 p-4 md:grid-cols-4" onSubmit={async (e) => {
         e.preventDefault();
         setBusy(true);
         setError('');
@@ -131,19 +151,25 @@ export function AdminStops() {
           setBusy(false);
         }
       }}>
-        <input className="min-h-11 rounded-xl border border-line px-3" placeholder="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
-        <input className="min-h-11 rounded-xl border border-line px-3" placeholder="Lat" type="number" step="any" value={form.lat} onChange={(e) => setForm({ ...form, lat: e.target.value })} required />
-        <input className="min-h-11 rounded-xl border border-line px-3" placeholder="Lng" type="number" step="any" value={form.lng} onChange={(e) => setForm({ ...form, lng: e.target.value })} required />
-        <button className="min-h-11 cursor-pointer rounded-xl bg-primary font-semibold text-white disabled:opacity-60" type="submit" disabled={busy}>{busy ? 'Adding…' : 'Add stop'}</button>
+        <input className="field" placeholder="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
+        <input className="field" placeholder="Lat" type="number" step="any" value={form.lat} onChange={(e) => setForm({ ...form, lat: e.target.value })} required />
+        <input className="field" placeholder="Lng" type="number" step="any" value={form.lng} onChange={(e) => setForm({ ...form, lng: e.target.value })} required />
+        <button className="btn-blue" type="submit" disabled={busy}>{busy ? 'Adding…' : 'Add stop'}</button>
       </form>
       <FormError error={error} />
       <ListShell loading={!stops} error={error && !stops ? error : ''} onRetry={load}>
         {stops?.length === 0 ? (
           <EmptyState title="No stops" body="Add campus stops before building routes." />
         ) : (
-          stops?.map((s) => (
-            <div key={s.id} className="rounded-xl border border-line bg-white p-3">{s.name} · {Number(s.lat).toFixed(4)}, {Number(s.lng).toFixed(4)}</div>
-          ))
+          <Table
+            columns={['Stop', 'Location']}
+            rows={stops?.map((s) => (
+              <tr key={s.id} className="border-t border-line">
+                <td className="px-4 py-3 font-medium">{s.name}</td>
+                <td className="px-4 py-3 text-slate-600">{Number(s.lat).toFixed(4)}, {Number(s.lng).toFixed(4)}</td>
+              </tr>
+            ))}
+          />
         )}
       </ListShell>
     </div>
@@ -154,21 +180,22 @@ export function AdminDrivers() {
   const { items: drivers, error, load } = useAdminList('/api/admin/drivers', 'drivers');
   return (
     <div className="space-y-3">
-      <h1 className="text-2xl font-semibold">Drivers</h1>
+      <PageHeader title="Drivers" subtitle="Assignments, licenses and current status." />
       <ListShell loading={!drivers} error={error && !drivers ? error : ''} onRetry={load}>
         {drivers?.length === 0 ? (
           <EmptyState title="No drivers" body="Driver accounts will appear here once created." />
         ) : (
-          drivers?.map((d) => (
-            <article key={d.id} className="rounded-2xl border border-line bg-white p-4">
-              <div className="flex justify-between">
-                <p className="font-semibold">{d.full_name}</p>
-                <StatusBadge status={d.status} />
-              </div>
-              <p className="text-sm text-slate-600">{d.email} · {d.license_no}</p>
-              <p className="text-sm">{d.bus_number || 'No bus'} · Route {d.route_code || '—'}</p>
-            </article>
-          ))
+          <Table
+            columns={['Name', 'Contact', 'Status', 'Assignment']}
+            rows={drivers?.map((d) => (
+              <tr key={d.id} className="border-t border-line">
+                <td className="px-4 py-3 font-medium">{d.full_name}</td>
+                <td className="px-4 py-3 text-slate-600">{d.email}<br />{d.license_no}</td>
+                <td className="px-4 py-3"><StatusBadge status={d.status} /></td>
+                <td className="px-4 py-3">{d.bus_number || 'No bus'} · Route {d.route_code || '—'}</td>
+              </tr>
+            ))}
+          />
         )}
       </ListShell>
     </div>
@@ -179,20 +206,22 @@ export function AdminTrips() {
   const { items: trips, error, load } = useAdminList('/api/trips', 'trips');
   return (
     <div className="space-y-3">
-      <h1 className="text-2xl font-semibold">Trips</h1>
+      <PageHeader title="Trips" subtitle="Live and recent trips." />
       <ListShell loading={!trips} error={error && !trips ? error : ''} onRetry={load}>
         {trips?.length === 0 ? (
           <EmptyState title="No trips" body="Trips appear here once drivers start them." />
         ) : (
-          trips?.map((t) => (
-            <article key={t.id} className="rounded-2xl border border-line bg-white p-4">
-              <div className="flex justify-between">
-                <p className="font-semibold">{t.bus_number} · {t.route_code}</p>
-                <StatusBadge status={t.status} />
-              </div>
-              <p className="text-sm text-slate-600">{t.driver_name} · occupancy {t.occupancy}</p>
-            </article>
-          ))
+          <Table
+            columns={['Bus / Route', 'Driver', 'Occupancy', 'Status']}
+            rows={trips?.map((t) => (
+              <tr key={t.id} className="border-t border-line">
+                <td className="px-4 py-3 font-medium">{t.bus_number} · {t.route_code}</td>
+                <td className="px-4 py-3">{t.driver_name}</td>
+                <td className="px-4 py-3">{t.occupancy}</td>
+                <td className="px-4 py-3"><StatusBadge status={t.status === 'active' ? 'on-time' : t.status} /></td>
+              </tr>
+            ))}
+          />
         )}
       </ListShell>
     </div>
@@ -207,8 +236,8 @@ export function AdminSettings() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-semibold">Announcements</h1>
-      <form className="space-y-2 rounded-2xl border border-line bg-white p-4" onSubmit={async (e) => {
+      <PageHeader title="Announcements" subtitle="Share updates with students and staff." />
+      <form className="card space-y-2 p-4" onSubmit={async (e) => {
         e.preventDefault();
         setBusy(true);
         setError('');
@@ -222,9 +251,9 @@ export function AdminSettings() {
           setBusy(false);
         }
       }}>
-        <input className="min-h-11 w-full rounded-xl border border-line px-3" placeholder="Title" value={title} onChange={(e) => setTitle(e.target.value)} required />
-        <textarea className="min-h-24 w-full rounded-xl border border-line p-3" placeholder="Message" value={body} onChange={(e) => setBody(e.target.value)} required />
-        <button className="min-h-11 cursor-pointer rounded-xl bg-primary px-4 font-semibold text-white disabled:opacity-60" type="submit" disabled={busy}>{busy ? 'Publishing…' : 'Publish'}</button>
+        <input className="field" placeholder="Title" value={title} onChange={(e) => setTitle(e.target.value)} required />
+        <textarea className="field min-h-24 py-3" placeholder="Message" value={body} onChange={(e) => setBody(e.target.value)} required />
+        <button className="btn-blue" type="submit" disabled={busy}>{busy ? 'Publishing…' : 'Publish'}</button>
       </form>
       <FormError error={error} />
       <ListShell loading={!announcements} error={error && !announcements ? error : ''} onRetry={load}>
@@ -232,9 +261,12 @@ export function AdminSettings() {
           <EmptyState title="No announcements" body="Published announcements will appear here." />
         ) : (
           announcements?.map((a) => (
-            <article key={a.id} className="rounded-xl border border-line bg-white p-3">
-              <div className="flex justify-between"><p className="font-semibold">{a.title}</p><StatusBadge status={a.severity} /></div>
-              <p className="text-sm text-slate-600">{a.body}</p>
+            <article key={a.id} className="card p-4">
+              <div className="flex justify-between gap-3">
+                <p className="font-semibold">{a.title}</p>
+                <StatusBadge status={a.severity} />
+              </div>
+              <p className="mt-1 text-sm text-slate-600">{a.body}</p>
             </article>
           ))
         )}

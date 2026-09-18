@@ -23,7 +23,13 @@ import { AdminBuses, AdminRoutes, AdminStops, AdminDrivers, AdminTrips, AdminSet
 
 function Guard({ roles, children }) {
   const { user, loading } = useAuth();
-  if (loading) return <div className="p-8 text-sm text-slate-500">Loading session…</div>;
+  if (loading) {
+    return (
+      <div className="grid min-h-dvh place-items-center bg-canvas text-sm text-slate-500">
+        Loading session…
+      </div>
+    );
+  }
   if (!user) return <Navigate to="/login" replace />;
   if (roles && !roles.includes(user.role)) {
     if (user.role === 'admin') return <Navigate to="/admin" replace />;
@@ -35,11 +41,11 @@ function Guard({ roles, children }) {
 
 function Shell({ children, studentNav, roleNav }) {
   return (
-    <div className="flex min-h-dvh">
+    <div className="flex min-h-dvh bg-canvas">
       <a className="skip-link" href="#main">Skip to main content</a>
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
-        <main id="main" className={`flex-1 px-4 py-5 md:px-8 ${studentNav || roleNav ? 'pb-24 md:pb-8' : 'pb-8'}`}>
+        <main id="main" className={`mx-auto w-full max-w-6xl flex-1 px-4 py-5 md:px-8 ${studentNav || roleNav ? 'pb-24 md:pb-8' : 'pb-8'}`}>
           {children}
         </main>
         {studentNav && <BottomNav />}
@@ -51,7 +57,11 @@ function Shell({ children, studentNav, roleNav }) {
 
 export default function App() {
   const { user, loading } = useAuth();
-  if (loading) return <div className="grid min-h-dvh place-items-center text-slate-500">Loading…</div>;
+  if (loading) {
+    return (
+      <div className="grid min-h-dvh place-items-center bg-canvas text-slate-500">Loading…</div>
+    );
+  }
 
   return (
     <Routes>
@@ -67,7 +77,7 @@ export default function App() {
       <Route path="/buses/:id" element={<Guard roles={['student', 'admin']}><Shell studentNav={user?.role === 'student'}><BusDetail /></Shell></Guard>} />
       <Route path="/favorites" element={<Guard roles={['student']}><Shell studentNav><Favorites /></Shell></Guard>} />
       <Route path="/notifications" element={<Guard roles={['student']}><Shell studentNav><Notifications /></Shell></Guard>} />
-      <Route path="/profile" element={<Guard roles={['student', 'driver', 'admin']}><Shell studentNav={user?.role === 'student'}><Profile /></Shell></Guard>} />
+      <Route path="/profile" element={<Guard roles={['student', 'driver', 'admin']}><Shell studentNav={user?.role === 'student'} roleNav={user?.role !== 'student'}><Profile /></Shell></Guard>} />
 
       <Route path="/driver" element={<Guard roles={['driver']}><Shell roleNav><DriverHome /></Shell></Guard>} />
       <Route path="/driver/trip" element={<Guard roles={['driver']}><Shell roleNav><DriverHome /></Shell></Guard>} />

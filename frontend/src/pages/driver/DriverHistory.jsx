@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../api';
-import { StatusBadge, Skeleton, EmptyState, ErrorState } from '../../components/ui.jsx';
+import { StatusBadge, Skeleton, EmptyState, ErrorState, PageHeader } from '../../components/ui.jsx';
+import { formatWhen } from '../../lib/format.js';
 
 export default function DriverHistory() {
   const [trips, setTrips] = useState([]);
@@ -16,15 +17,15 @@ export default function DriverHistory() {
   if (error) return <ErrorState message={error} />;
   if (!trips.length) return <EmptyState title="No trips yet" body="Completed trips will be stored here." />;
   return (
-    <div className="mx-auto max-w-md space-y-3">
-      <h1 className="text-2xl font-semibold">Trip history</h1>
+    <div className="mx-auto max-w-xl space-y-3">
+      <PageHeader title="Trip history" subtitle="Past trips and status." />
       {trips.map((t) => (
-        <article key={t.id} className="rounded-2xl border border-line bg-white p-4">
-          <div className="flex justify-between">
+        <article key={t.id} className="card p-4">
+          <div className="flex justify-between gap-3">
             <p className="font-semibold">{t.bus_number} · Route {t.route_code}</p>
             <StatusBadge status={t.status} />
           </div>
-          <p className="text-sm text-slate-600">{new Date(t.created_at).toLocaleString()}</p>
+          <p className="mt-1 text-sm text-slate-600">{formatWhen(t.created_at)}</p>
         </article>
       ))}
     </div>

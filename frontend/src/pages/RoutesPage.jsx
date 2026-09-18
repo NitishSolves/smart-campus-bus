@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import RouteCard from '../components/RouteCard.jsx';
-import { EmptyState, ErrorState, Skeleton } from '../components/ui.jsx';
+import { EmptyState, ErrorState, PageHeader, Skeleton } from '../components/ui.jsx';
 
 export default function RoutesPage() {
   const [routes, setRoutes] = useState([]);
@@ -23,8 +23,8 @@ export default function RoutesPage() {
 
   return (
     <div>
-      <h1 className="mb-4 text-2xl font-semibold">Routes</h1>
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+      <PageHeader title="Routes" subtitle="Campus loops, stops and typical duration." />
+      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {routes.map((route) => (
           <RouteCard key={route.id} route={route} onOpen={() => navigate(`/routes/${route.id}`)} />
         ))}

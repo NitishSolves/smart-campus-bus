@@ -5,12 +5,14 @@
 :root {
   --color-primary: #2563EB;
   --color-on-primary: #FFFFFF;
+  --color-navy: #0B1F3A;
+  --color-navy-800: #132A4A;
   --color-secondary: #0891B2;
-  --color-accent: #EA580C;
-  --color-background: #F8FAFC;
+  --color-accent: #1D4ED8;
+  --color-background: #F4F7FB;
   --color-foreground: #0F172A;
-  --color-muted: #F1F5FD;
-  --color-border: #E4ECFC;
+  --color-muted: #EEF3FB;
+  --color-border: #E2E8F4;
   --color-destructive: #DC2626;
   --color-ring: #2563EB;
 }
@@ -57,4 +59,42 @@ body {
 
 .skip-link:focus {
   left: 8px;
+}
+
+@layer components {
+  .card {
+    @apply rounded-2xl border border-line bg-white shadow-card;
+  }
+
+  .field {
+    @apply mt-1 min-h-12 w-full rounded-xl border border-line bg-white px-3 text-sm text-ink outline-none transition placeholder:text-slate-400 focus:border-primary focus:ring-2 focus:ring-primary/20;
+  }
+
+  .btn-primary {
+    @apply inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-xl bg-navy px-4 text-sm font-semibold text-white transition hover:bg-navy-800 focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .btn-blue {
+    @apply inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-semibold text-white transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .btn-accent {
+    @apply inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-xl bg-amber-500 px-4 text-sm font-semibold text-white transition hover:bg-amber-600 focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .btn-danger {
+    @apply inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-xl bg-red-600 px-4 text-sm font-semibold text-white transition hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .btn-ghost {
+    @apply inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border border-line bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .page-title {
+    @apply text-2xl font-bold tracking-tight text-ink md:text-3xl;
+  }
+
+  .page-sub {
+    @apply mt-1 text-sm text-slate-500;
+  }
 }
