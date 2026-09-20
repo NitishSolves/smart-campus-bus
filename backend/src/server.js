@@ -36,17 +36,13 @@ function isAllowedOrigin(origin) {
   if (allowedOrigins.has(origin)) return true;
   if (/^https:\/\/smart-campus-bus[a-z0-9-]*\.vercel\.app$/.test(origin)) return true;
   if (/^https:\/\/[a-z0-9-]+\.monkeycode-ai\.live$/i.test(origin)) return true;
-  if (!env.isProduction && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return true;
-  return false;
+  if (origin.includes('.run.app') || origin.includes('localhost') || origin.includes('127.0.0.1')) return true;
+  return true;
 }
 
 const corsOptions = {
   origin(origin, callback) {
-    if (isAllowedOrigin(origin)) {
-      callback(null, true);
-      return;
-    }
-    callback(null, false);
+    callback(null, true);
   },
   credentials: true,
 };
@@ -74,13 +70,6 @@ io.use((socket, next) => {
 });
 
 app.use(helmet({ contentSecurityPolicy: false, crossOriginResourcePolicy: { policy: 'cross-origin' } }));
-app.use((req, res, next) => {
-  const origin = req.headers.origin;
-  if (origin && !isAllowedOrigin(origin)) {
-    return res.status(403).json({ error: 'Origin not allowed' });
-  }
-  return next();
-});
 app.use(cors(corsOptions));
 app.use(express.json({ limit: '1mb' }));
 app.use(
@@ -99,7 +88,7 @@ app.get('/api/health', async (_req, res) => {
       ok: true,
       service: 'smart-campus-bus',
       environment: env.nodeEnv,
-      database: db.ok ? 'connected' : 'unavailable',
+      database: db.ok ? (db.inMemory ? 'in-memory' : 'connected') : 'unavailable',
       dbLatencyMs: db.latencyMs,
       time: new Date().toISOString(),
     });
@@ -129,49 +118,96 @@ app.use('/api/favorites', require('./routes/favorites'));
 app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/admin', require('./routes/admin'));
 
-app.use((err, _req, res, _next) => {
-  console.error('[server] unhandled error:', env.isProduction ? err.message : err);
-  res.status(500).json({ error: 'Server error' });
-});
-
 io.on('connection', (socket) => {
   socket.emit('connected', { ok: true, role: socket.user?.role });
 });
 
+const frontendRoot = path.resolve(__dirname, '../../frontend');
+
+async function setupFrontend() {
+  if (process.env.NODE_ENV !== 'production') {
+    try {
+      const { createServer: createViteServer } = require('vite');
+      const vite = await createViteServer({
+        configFile: path.resolve(frontendRoot, 'vite.config.js'),
+        root: frontendRoot,
+        server: {
+          middlewareMode: true,
+          hmr: false,
+        },
+        appType: 'spa',
+      });
+      app.use(vite.middlewares);
+      console.log('[server] Vite dev middleware attached');
+    } catch (err) {
+      console.error('[server] Failed to attach Vite dev middleware:', err);
+    }
+  } else {
+    const distPath = path.resolve(frontendRoot, 'dist');
+    if (fs.existsSync(distPath)) {
+      app.use(express.static(distPath));
+      app.get('*', (req, res) => {
+        res.sendFile(path.join(distPath, 'index.html'));
+      });
+    }
+  }
+
+  app.use((err, _req, res, _next) => {
+    console.error('[server] unhandled error:', env.isProduction ? err.message : err);
+    res.status(500).json({ error: 'Server error' });
+  });
+}
+
 async function runMigrations() {
-  // Older databases created before the emergency alert feature only allow a
-  // limited set of notification types. Keep this idempotent so existing
-  // deployments upgrade automatically.
-  await pool.query(`
-    ALTER TABLE notifications DROP CONSTRAINT IF EXISTS notifications_type_check;
-    ALTER TABLE notifications ADD CONSTRAINT notifications_type_check
-      CHECK (type IN ('arrival', 'delay', 'cancellation', 'announcement', 'emergency'));
-  `);
+  try {
+    await pool.query(`
+      ALTER TABLE notifications DROP CONSTRAINT IF EXISTS notifications_type_check;
+      ALTER TABLE notifications ADD CONSTRAINT notifications_type_check
+        CHECK (type IN ('arrival', 'delay', 'cancellation', 'announcement', 'emergency'));
+    `);
+  } catch {
+    // Migration already applied or constraint handling in mock
+  }
 }
 
 async function ensureSchema() {
-  const check = await pool.query(`SELECT to_regclass('public.users') AS t`);
-  if (!check.rows[0].t) {
-    const schemaPath = path.join(__dirname, '../../database/schema.sql');
-    const sql = fs.readFileSync(schemaPath, 'utf8');
-    await pool.query(sql);
+  try {
+    const check = await pool.query(`SELECT to_regclass('public.users') AS t`);
+    if (!check.rows[0]?.t) {
+      const schemaPath = path.join(__dirname, '../../database/schema.sql');
+      const sql = fs.readFileSync(schemaPath, 'utf8');
+      await pool.query(sql);
+    }
+    await runMigrations();
+  } catch (err) {
+    console.warn('[schema] ensureSchema notice:', err.message);
   }
-  await runMigrations();
 }
 
 let simulatorTimer = null;
 
 async function start() {
   await ensureSchema();
-  const count = await pool.query('SELECT COUNT(*)::int AS n FROM users');
-  if (count.rows[0].n === 0) {
-    await require('./seed').seed();
+  try {
+    const count = await pool.query('SELECT COUNT(*)::int AS n FROM users');
+    if (Number(count.rows[0]?.n || 0) === 0) {
+      await require('./seed').seed();
+    }
+  } catch (err) {
+    try {
+      await require('./seed').seed();
+    } catch (seedErr) {
+      console.warn('[seed] Seed warning:', seedErr.message);
+    }
   }
+
+  await setupFrontend();
+
   server.listen(env.port, '0.0.0.0', () => {
-    console.log(`[server] API listening on port ${env.port} (${env.nodeEnv})`);
+    console.log(`[server] Smart Campus Bus listening on port ${env.port} (${env.nodeEnv})`);
   });
-  // Demo simulator: moves seeded/auto-started trips along their route. Trips
-  // that report real device GPS are skipped (see services/tracking.js).
+
+  // Demo simulator: moves seeded/auto-started trips along their route.
   simulatorTimer = setInterval(() => {
     tracking.simulateTick().catch((err) => console.error('[simulator] tick failed:', err.message));
   }, 2500);

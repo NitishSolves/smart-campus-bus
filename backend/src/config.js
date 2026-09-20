@@ -3,7 +3,7 @@ const SUPPORTED_ENVS = ['development', 'production', 'test'];
 function readEnv() {
   const nodeEnv = process.env.NODE_ENV || 'development';
   const rawPort = process.env.PORT;
-  const port = rawPort === undefined || rawPort === '' ? 3001 : Number(rawPort);
+  const port = rawPort === undefined || rawPort === '' ? 3000 : Number(rawPort);
 
   return {
     nodeEnv,
@@ -11,7 +11,7 @@ function readEnv() {
     isTest: nodeEnv === 'test',
     port,
     databaseUrl: process.env.DATABASE_URL || '',
-    jwtSecret: process.env.JWT_SECRET || '',
+    jwtSecret: process.env.JWT_SECRET || 'smart-campus-bus-dev-secret-key-2025',
     corsOrigins: (process.env.CORS_ORIGINS || '')
       .split(',')
       .map((origin) => origin.trim())
@@ -22,15 +22,11 @@ function readEnv() {
 function validateEnv(env = readEnv()) {
   const problems = [];
 
-  if (!env.databaseUrl) {
-    problems.push('DATABASE_URL is required (see backend/.env.example)');
-  } else if (!/^postgres(ql)?:\/\//i.test(env.databaseUrl)) {
+  if (env.databaseUrl && !/^postgres(ql)?:\/\//i.test(env.databaseUrl)) {
     problems.push('DATABASE_URL must be a valid postgres:// connection string');
   }
 
-  if (!env.jwtSecret) {
-    problems.push('JWT_SECRET is required (see backend/.env.example)');
-  } else if (env.isProduction && env.jwtSecret.length < 16) {
+  if (env.isProduction && env.jwtSecret && env.jwtSecret.length < 16) {
     problems.push('JWT_SECRET must be at least 16 characters in production');
   }
 

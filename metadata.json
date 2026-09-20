@@ -1,0 +1,6 @@
+{
+  "name": "Smart Campus Bus",
+  "description": "Real-time campus transit tracking, route management, ETA prediction, and driver/admin dispatch platform.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
